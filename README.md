@@ -9,7 +9,7 @@ A minimalist Bash script to manage and launch bleeding-edge Wine builds on Cachy
   - `TKG` patches
   - Native **Wayland** support
   - **DXVK** for Vulkan-based DirectX translation
-- 🔀 Switches your active Wine version via a simple symlink: `~/.set_wine`
+- 🔀 Switches your active Wine version via a simple symlink: `~/.setwine`
 - 🚀 Optionally runs programs with the selected Wine version
 - 🏡 Installs **everything under your home directory** — no root, no system changes
 
@@ -27,7 +27,7 @@ Perfect for gamers, developers, and testers who need multiple advanced Wine buil
   - Parches `TKG`
   - Soporte nativo para **Wayland**
   - **DXVK** para usar Vulkan en juegos DirectX
-- 🔀 Cambia tu versión activa de Wine mediante el enlace `~/.set_wine`
+- 🔀 Cambia tu versión activa de Wine mediante el enlace `~/.spa_setwine`
 - 🚀 Puede ejecutar programas con la versión seleccionada de Wine
 - 🏡 Todo se instala en tu carpeta de usuario — **sin root, sin tocar el sistema**
 
