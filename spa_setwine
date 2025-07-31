@@ -532,6 +532,7 @@ instalador_loop() {
     install_wineshort2desktop
     
     vecho "=========== INSTALACIÓN COMPLETA ==========="
+    vecho "Desloguea sesión y volve a loguear!"
 }
 
 instalador_loop
