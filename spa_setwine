@@ -1,0 +1,537 @@
+#!/usr/bin/env bash
+
+# Just defining vecho as Green by default
+ORIG_ECHO=$(which echo)
+GREEN='\e[32m'
+RESET='\e[0m'
+
+vecho() {
+  "$ORIG_ECHO" -e "${GREEN}$*${RESET}"
+}
+
+check_internet() {
+  vecho "Verificando conexión a Internet..."
+  if ! ping -q -c 1 -W 1 1.1.1.1 >/dev/null; then
+    vecho "Sin conexión a Internet. Abortando."
+    exit 1
+  fi
+}
+
+check_architecture() {
+    if [[ "$(uname -m)" != "x86_64" && "$(uname -m)" != "amd64" ]]; then
+        vecho "No estás en una arquitectura amd64 o x86_64, paramos."
+        exit 1
+    else
+        vecho "Estás en una arquitectura amd64 o x86_64"
+    fi
+}
+
+check_wine_installed() {
+  vecho "Verificando si Wine ya está instalado..."
+
+  if command -v wine >/dev/null 2>&1 && [[ "$(command -v wine)" != "$HOME/.local/bin/wine" ]]; then
+    vecho "Wine ya está instalado globalmente en el sistema. Abortando instalación."
+    exit 1
+  fi
+
+  if [[ -d "$HOME/.local/wine" ]]; then
+    vecho "Se detectó una instalación previa de Wine en ~/.local/wine."
+    vecho "Por si acaso no vamos a remover .wine (tu prefix o "disco C" de Wine)"
+    read -rp "¿Deseás eliminar Wine (no tu prefix) y continuar con una nueva instalación? [s/N]: " respuesta
+    case "$respuesta" in
+      [sS][iI]|[sS])
+        vecho "Eliminando ~/.local/wine..."
+        rm -rf "$HOME/.local/wine"
+        ;;
+      *)
+        vecho "Abortando instalación."
+        exit 1
+        ;;
+    esac
+  fi
+}
+
+
+check_cachyos() {
+  vecho "Verificando si estás en CachyOS..."
+  if grep -qi 'cachyos' /etc/os-release; then
+    vecho "Sistema operativo identificado como CachyOS."
+  else
+    vecho "Advertencia: no estás en CachyOS. Este script fue diseñado para CachyOS y puede no funcionar correctamente. Imposible que rompa algo igual"
+    read -rp "¿Deseás continuar bajo tu propio riesgo? [s/N]: " respuesta
+    case "$respuesta" in
+      [sS][iI]|[sS]) 
+        vecho "Continuando..."
+        ;;
+      *)
+        vecho "Abortando instalación."
+        exit 1
+        ;;
+    esac
+  fi
+}
+
+general_check() {
+  check_internet
+  check_architecture
+  check_wine_installed
+  check_cachyos
+}
+
+check_release_wine_ntsync() {
+  local url_api="https://api.github.com/repos/Kron4ek/Wine-Builds/releases"
+  local respuesta=$(wget -qO- "$url_api")
+
+  if [[ -z "$respuesta" ]]; then
+    vecho "No se pudo obtener la respuesta de la API de GitHub."
+    return 1
+  fi
+
+  # Extraer URLs con ntsync y ordenar por versión (más nueva primero)
+  local urls=($(echo "$respuesta" \
+    | grep -oE '"browser_download_url": ?"[^"]*wine-[0-9]+\.[0-9]+(-[0-9]+)?-staging-tkg-ntsync-amd64-wow64\.tar\.xz"' \
+    | sed -E 's/.*"([^"]+)"/\1/' \
+    | sort -Vr \
+    | head -n 5))
+
+  if [[ ${#urls[@]} -eq 0 ]]; then
+    vecho "No se encontraron versiones de Wine con ntsync."
+    return 1
+  fi
+
+  echo "Últimas versiones de Wine con ntsync (más nuevas primero):"
+  for url in "${urls[@]}"; do
+    echo "$url"
+  done
+}
+
+install_wine() {
+    vecho "Buscando versiones de Wine con ntsync..."
+    mapfile -t urls < <(check_release_wine_ntsync)
+
+    # Filtrar URLs válidas que empiecen con http (evita líneas vacías o texto)
+    urls=($(printf '%s\n' "${urls[@]}" | grep -E '^https?://'))
+
+    if [[ ${#urls[@]} -eq 0 ]]; then
+        vecho "No se encontraron versiones disponibles de Wine con ntsync."
+        exit 1
+    fi
+
+    vecho "Seleccioná la versión de Wine que querés instalar:"
+    local i=1
+    for url in "${urls[@]}"; do
+        echo "  $i) $url"
+        ((i++))
+    done
+
+    local opcion
+    read -rp "Ingresá el número de la versión deseada [1-${#urls[@]}]: " opcion
+
+    if ! [[ "$opcion" =~ ^[1-9][0-9]*$ ]] || (( opcion < 1 || opcion > ${#urls[@]} )); then
+        vecho "Opción inválida."
+        exit 1
+    fi
+
+    local url="${urls[$((opcion-1))]}"
+    local destino="$HOME/.local/wine"
+
+    vecho "Instalando Wine desde:"
+    echo "$url"
+
+    if [[ -d "$destino" ]]; then
+        vecho "La carpeta $destino ya existe. Se eliminará para reemplazarla."
+        rm -rf "$destino"
+    fi
+
+    wget -O "$HOME/wine.tar.xz" "$url" || {
+        vecho "Error al descargar Wine desde $url"
+        exit 1
+    }
+
+    tar -xf "$HOME/wine.tar.xz" -C "$HOME/.local/" || {
+        vecho "Error al descomprimir Wine"
+        exit 1
+    }
+
+    carpeta_extraida=$(find "$HOME/.local" -maxdepth 1 -type d -name "wine-*-staging-tkg-ntsync-amd64-wow64" -print -quit)
+
+    if [[ -z "$carpeta_extraida" ]]; then
+        vecho "No se encontró la carpeta extraída."
+        exit 1
+    fi
+
+    mv "$carpeta_extraida" "$destino" || {
+        vecho "Error al mover la carpeta extraída."
+        exit 1
+    }
+
+    rm "$HOME/wine.tar.xz"
+
+    vecho "Wine con ntsync ha sido instalado correctamente en: $destino"
+}
+
+create_binary_links() {
+    mkdir -p "$HOME/.local/bin"
+    cat > "$HOME/.local/bin/wine" <<EOF
+#!/bin/bash
+export WINEFSYNC=1
+export WINENTSYNC=1
+export MANGOHUD=1
+exec "$HOME/.local/wine/bin/wine" "\$@"
+EOF
+    chmod +x "$HOME/.local/bin/wine"
+    ln -sf "$HOME/.local/wine/bin/winecfg" "$HOME/.local/bin/winecfg"
+    ln -sf "$HOME/.local/wine/bin/wineserver" "$HOME/.local/bin/wineserver"
+    ln -sf "$HOME/.local/wine/bin/wineboot" "$HOME/.local/bin/wineboot"
+    vecho "Enlaces simbólicos creados en ~/.local/bin y wrapper para wine creado."
+}
+
+add_local_bin() {
+    check_shell() {
+        if [ -n "$FISH_VERSION" ]; then
+            echo "fish"
+        elif [ -n "$ZSH_VERSION" ]; then
+            echo "zsh"
+        elif [ -n "$BASH_VERSION" ]; then
+            echo "bash"
+        else
+            basename "$(ps -p $$ -o comm=)"
+        fi
+    }
+
+    shell_actual=$(check_shell)
+    case "$shell_actual" in
+        bash)
+            archivo_bash="$HOME/.bashrc"
+            if ! grep -q "export PATH=\$PATH:\$HOME/.local/bin" "$archivo_bash"; then
+                echo "export PATH=\$PATH:\$HOME/.local/bin" >> "$archivo_bash"
+                vecho "Se ha agregado ~/.local/bin al PATH en $archivo_bash."
+            else
+                vecho "Ya está agregado ~/.local/bin al PATH en $archivo_bash."
+            fi
+            export PATH="$PATH:$HOME/.local/bin"
+            ;;
+        zsh)
+            archivo_zsh="$HOME/.zshrc"
+            if ! grep -q "export PATH=\$PATH:\$HOME/.local/bin" "$archivo_zsh"; then
+                echo "export PATH=\$PATH:\$HOME/.local/bin" >> "$archivo_zsh"
+                vecho "Se ha agregado ~/.local/bin al PATH en $archivo_zsh."
+            else
+                vecho "Ya está agregado ~/.local/bin al PATH en $archivo_zsh."
+            fi
+            export PATH="$PATH:$HOME/.local/bin"
+            ;;
+        fish)
+            archivo_fish="$HOME/.config/fish/config.fish"
+            if ! grep -q "set -gx PATH \$HOME/.local/bin \$PATH" "$archivo_fish"; then
+                echo "set -gx PATH \$HOME/.local/bin \$PATH" >> "$archivo_fish"
+                vecho "Se ha agregado ~/.local/bin al PATH en $archivo_fish."
+            else
+                vecho "Ya está agregado ~/.local/bin al PATH en $archivo_fish."
+            fi
+            # Aplica de inmediato en fish
+            if command -v fish &> /dev/null; then
+                fish -c "set -gx PATH \$HOME/.local/bin \$PATH"
+            fi
+            ;;
+        *)
+            vecho "No se ha reconocido la shell. No se pudo agregar la ruta al PATH. Tocará que la agregues tu mismo."
+            ;;
+    esac
+    vecho "PATH actualizado en esta sesión."
+}
+
+install_winetricks() {
+    wget https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O "$HOME/.local/bin/winetricks" || {
+        vecho "Error al descargar winetricks"
+        return 1
+    }
+
+    sed -i '/^#!/a export W_OPT_UNATTENDED=1' "$HOME/.local/bin/winetricks"
+    chmod +x "$HOME/.local/bin/winetricks"
+    vecho "Winetricks instalado correctamente."
+}
+
+create_wine_launcher() {
+    local desktop_file="$HOME/.local/share/applications/wine.desktop"
+
+    if [[ -f "$desktop_file" ]]; then
+        vecho "El archivo wine.desktop ya existe. No se realizaron cambios."
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$desktop_file")"
+    cat > "$desktop_file" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Wine Windows Program Loader
+Exec=wine start /unix %f
+MimeType=application/x-ms-dos-executable;application/x-msi;application/x-ms-shortcut;application/x-bat;application/x-mswinurl
+Icon=wine
+NoDisplay=false
+StartupNotify=true
+EOF
+
+    update-desktop-database "$HOME/.local/share/applications"
+
+    xdg-mime default wine.desktop application/x-ms-dos-executable
+    xdg-mime default wine.desktop application/x-msi
+    xdg-mime default wine.desktop application/x-ms-shortcut
+    xdg-mime default wine.desktop application/x-bat
+    xdg-mime default wine.desktop application/x-mswinurl
+
+    vecho "wine.desktop creado y asociado correctamente a los archivos ejecutables de Windows."
+}
+
+setup_prefix() {
+    if ! command -v wine &> /dev/null; then
+        vecho "Error: wine no está instalado."
+        return 1
+    fi
+
+    WINEDEBUG=-all wineboot --init > /dev/null 2>&1
+}
+
+
+setup_dxvk() {
+    if ! command -v winetricks &> /dev/null; then
+        echo "Error: winetricks no está disponible."
+        return 1
+    fi
+
+    vecho "¿Qué versión de DXVK querés instalar? Después podés cambiarla con winetricks"
+    vecho "  1) dxvk2041 (estable para intel)"
+    vecho "  2) dxvk2051"
+    vecho "  3) dxvk (última disponible)"
+    read -rp "Elegí una opción [1-3]: " opcion
+
+    case "$opcion" in
+        1) dxvk_ver="dxvk2041" ;;
+        2) dxvk_ver="dxvk2051" ;;
+        3) dxvk_ver="dxvk" ;;
+        *) vecho "Opción inválida. Abortando configuración DXVK." ; return 1 ;;
+    esac
+
+    vecho "Instalando $dxvk_ver con winetricks..."
+    WINEDEBUG=-all winetricks "$dxvk_ver" > /dev/null 2>&1
+}
+
+
+
+setup_wayland() {
+    if ! command -v winetricks &> /dev/null; then
+        vecho "Error: winetricks no arrancó por alguna razón."
+        return 1
+    fi
+
+    vecho "Vamos a habilitar el modo wayland. Para volver a x11 usá 'winetricks graphics=x11' en consola."
+    WINEDEBUG=-all winetricks graphics=wayland > /dev/null 2>&1
+}
+
+
+detect_desktop_environment() {
+    if [[ "$XDG_CURRENT_DESKTOP" =~ GNOME ]]; then
+        echo "gnome"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ XFCE ]]; then
+        echo "xfce"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ KDE ]]; then
+        echo "kde"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ Cinnamon ]]; then
+        echo "cinnamon"
+    else
+        echo "unknown"
+    fi
+}
+
+setup_wine_killer_shortcut() {
+    local de=$(detect_desktop_environment)
+
+    case "$de" in
+        gnome)
+            gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/']"
+            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ name "Wine Killer"
+            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ command "wineserver -k"
+            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ binding "<Ctrl><Alt>Q"
+            echo "Atajo creado en GNOME. Ahora podés terminar Wine en cualquier momento con Ctrl+Alt+Q."
+            ;;
+
+        xfce)
+            xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/<Primary><Alt>Q" -n -t string -s "wineserver -k"
+            vecho "Atajo creado en XFCE. Ahora podés terminar Wine en cualquier momento con Ctrl+Alt+Q."
+            ;;
+
+        kde)
+            vecho "Plasma 6 hace muy dificil crear un hotkey por CLI"
+            vecho "Deberias ir a "shortcuts" y crear un hotkey para "wineserver -k" con algun hotkey a eleccion para matar Wine en caso de ser necesario"
+            ;;
+
+        cinnamon)
+            gsettings set org.cinnamon.desktop.keybindings custom-list "['custom0']"
+            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ name "Wine Killer"
+            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ command "wineserver -k"
+            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ binding "<Ctrl><Alt>Q"
+            vecho "Atajo creado en Cinnamon. Ahora podés terminar Wine en cualquier momento con Ctrl+Alt+Q."
+            ;;
+
+        *)
+            vecho "Entorno de escritorio no soportado."
+            return 1
+            ;;
+    esac
+}
+
+install_wineshort2desktop() {
+    mkdir -p "$HOME/.local/bin"
+
+    cat > "$HOME/.local/bin/wineshort2desktop" <<'EOF'
+#!/usr/bin/env bash
+
+create_wine_shortcut() {
+    if [[ $# -lt 2 ]]; then
+        echo "Usage: create_wine_shortcut <game.exe> <Shortcut Name>"
+        return 1
+    fi
+
+    local exe="$1"
+    local name="$2"
+
+    local cwd
+    cwd="$(pwd)"
+    local exe_path="$cwd/$exe"
+    local base_name="${exe%.exe}"
+    local launcher_path="$cwd/$base_name.sh"
+    local icon_path="$cwd/icon.png"
+    local shortcut_path="$(xdg-user-dir DESKTOP)/$name.desktop"
+    local wine_path="$HOME/.local/bin/wine"
+
+    if [[ ! -f "$exe_path" ]]; then
+        echo "Error: .exe not found: $exe_path"
+        return 1
+    fi
+
+    # Extraer íconos con wrestool si las herramientas están disponibles
+    if command -v wrestool >/dev/null && command -v convert >/dev/null && command -v identify >/dev/null; then
+        local temp_dir
+        temp_dir="$(mktemp -d)"
+        wrestool -x --type=14 "$exe_path" -o "$temp_dir" 2>/dev/null
+
+        shopt -s nullglob
+        for ico in "$temp_dir"/*.ico; do
+            convert "$ico" "${ico%.ico}.png" 2>/dev/null
+        done
+
+        local best_png=""
+        local best_area=0
+        for png in "$temp_dir"/*.png; do
+            local dimensions
+            dimensions=$(identify -format "%w %h" "$png" 2>/dev/null)
+            local width height area
+            read -r width height <<< "$dimensions"
+            area=$((width * height))
+            if (( area > best_area )); then
+                best_area=$area
+                best_png="$png"
+            fi
+        done
+
+        if [[ -n "$best_png" ]]; then
+            cp "$best_png" "$icon_path"
+            echo "Icon extracted: $icon_path"
+        else
+            echo "Icon extraction failed: no suitable images found."
+        fi
+
+        rm -rf "$temp_dir"
+    else
+        echo "Icon not extracted: missing dependencies."
+        echo "To enable icon extraction, install:"
+        echo "  sudo pacman -S icoutils imagemagick"
+    fi
+
+    # Crear script lanzador
+    cat <<EOF2 > "$launcher_path"
+#!/bin/bash
+cd "\$(dirname "\$0")"
+exec "$wine_path" "$exe"
+EOF2
+
+    chmod +x "$launcher_path"
+
+    # Crear acceso directo
+    cat <<EOF2 > "$shortcut_path"
+[Desktop Entry]
+Encoding=UTF-8
+Version=1.0
+Type=Application
+Name=$name
+GenericName=$name
+Comment=$name
+Icon=$icon_path
+Exec="$launcher_path"
+Categories=Game;
+Path=$cwd
+Terminal=false
+EOF2
+
+    chmod +x "$shortcut_path"
+    echo "Shortcut created: $shortcut_path"
+}
+
+create_wine_shortcut "$@"
+EOF
+
+    chmod +x "$HOME/.local/bin/wineshort2desktop"
+    vecho "Script 'wineshort2desktop' instalado en ~/.local/bin/"
+}
+
+
+# Main
+instalador_loop() {
+    vecho "=========== INICIANDO INSTALACIÓN DE WINE WoW64 + NTsync + Wayland + dxvk ==========="
+
+    general_check
+
+    vecho "----------> Instalando Wine personalizado..."
+    
+    install_wine
+
+    vecho "----------> Creando enlaces simbólicos..."
+    
+    create_binary_links
+
+    vecho "----------> Asegurando que ~/.local/bin esté en el PATH..."
+    
+    add_local_bin
+
+    vecho "----------> Instalando Winetricks..."
+    
+    install_winetricks
+
+    vecho "----------> Inicializando el prefix..."
+
+    setup_prefix
+
+    vecho "----------> Instalando DXVK..."
+
+    setup_dxvk
+
+    vecho "----------> Configurando para usar Wayland..."
+
+    setup_wayland
+
+    vecho "----------> Creando lanzador de Wine..."
+
+    create_wine_launcher
+
+    vecho "----------> Agregando atajo de teclado para cerrar Wine con CTRL + ALT + Q ..."
+
+    setup_wine_killer_shortcut
+
+    vecho "----------> Creando el creado de shortcuts para Escritorio "wineshort2desktop"..."
+
+    install_wineshort2desktop
+    
+    vecho "=========== INSTALACIÓN COMPLETA ==========="
+}
+
+instalador_loop
