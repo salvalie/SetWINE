@@ -5,7 +5,7 @@ A minimalist Bash script to manage and launch bleeding-edge Wine builds on Cachy
 
 - 🧪 **Bleeding-edge Wine** builds with:
   - `ntsync` support
-  - `WoW64` (capable of running 32 bit apps without ew bit system libs)
+  - `WoW64` (capable of running 32 bit apps without 32 bit system libs)
   - `TKG` patches
   - Native **Wayland** support
   - **DXVK** for Vulkan-based DirectX translation
