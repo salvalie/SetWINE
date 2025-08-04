@@ -6,7 +6,7 @@
 # Warnings handler
 set -o errtrace 
 
-trap 'func=${FUNCNAME[1]:-main}; recho "WARNING: función \"${func}\" devolvió error" >&2' ERR
+trap 'func=${FUNCNAME[1]:-main}; echo "WARNING: función \"${func}\" devolvió error" >&2' ERR
 
 # Defining gecho as Green (success) and recho as Red (error/warning) for echo's
 GREEN='\033[0;32m'; RED='\033[0;31m'; RESET='\033[0m'
