@@ -86,97 +86,97 @@ general_check() {
   check_cachyos
 }
 
-check_release_wine_ntsync() {
+check_wine_ntsync_and_proton_wow64() {
   local url_api="https://api.github.com/repos/Kron4ek/Wine-Builds/releases"
   local respuesta=$(wget -qO- "$url_api")
 
   if [[ -z "$respuesta" ]]; then
-    recho "No se pudo obtener la respuesta de la API de GitHub."
+    recho "No se pudo obtener respuesta de la API de GitHub."
     return 1
   fi
 
-  # Extraer URLs con ntsync y ordenar por versión (más nueva primero)
-  local urls=($(echo "$respuesta" \
+  local ntsync_urls=($(echo "$respuesta" \
     | grep -oE '"browser_download_url": ?"[^"]*wine-[0-9]+\.[0-9]+(-[0-9]+)?-staging-tkg-ntsync-amd64-wow64\.tar\.xz"' \
     | sed -E 's/.*"([^"]+)"/\1/' \
     | sort -Vr \
     | head -n 5))
 
-  if [[ ${#urls[@]} -eq 0 ]]; then
-    recho "No se encontraron versiones de Wine con ntsync."
-    return 1
-  fi
+  local proton_urls=($(echo "$respuesta" \
+    | grep -oE '"browser_download_url": ?"[^"]*wine-proton-[0-9]+\.[0-9]+(-[0-9]+)?-amd64-wow64\.tar\.xz"' \
+    | sed -E 's/.*"([^"]+)"/\1/' \
+    | sort -Vr \
+    | head -n 5))
 
-  gecho "Últimas versiones de Wine con ntsync (más nuevas primero):"
-  for url in "${urls[@]}"; do
-    echo "$url"
-  done
+  printf '%s\n' "${ntsync_urls[@]}" "${proton_urls[@]}"
 }
 
 install_wine() {
-    gecho "Buscando versiones de Wine con ntsync..."
-    mapfile -t urls < <(check_release_wine_ntsync)
+  gecho "Buscando versiones de Wine ntsync y Proton WOW64..."
+  mapfile -t urls < <(check_wine_ntsync_and_proton_wow64)
 
-    # Filtrar URLs válidas que empiecen con http (evita líneas vacías o texto)
-    urls=($(printf '%s\n' "${urls[@]}" | grep -E '^https?://'))
+  urls=($(printf '%s\n' "${urls[@]}" | grep -E '^https?://'))
 
-    if [[ ${#urls[@]} -eq 0 ]]; then
-        recho "No se encontraron versiones disponibles de Wine con ntsync."
-        exit 1
-    fi
+  if [[ ${#urls[@]} -eq 0 ]]; then
+    recho "No se encontraron versiones disponibles de Wine."
+    exit 1
+  fi
 
-    gecho "Seleccioná la versión de Wine que querés instalar:"
-    local i=1
-    for url in "${urls[@]}"; do
-        echo "  $i) $url"
-        ((i++))
-    done
+  gecho "Seleccione la versión de Wine que desea instalar:"
+  local i=1
+  for url in "${urls[@]}"; do
+    echo "  $i) $url"
+    ((i++))
+  done
 
-    local opcion
-    read -rp "Ingresá el número de la versión deseada [1-${#urls[@]}]: " opcion
+  local opcion
+  read -rp "Ingrese el número de la versión deseada [1-${#urls[@]}]: " opcion
 
-    if ! [[ "$opcion" =~ ^[1-9][0-9]*$ ]] || (( opcion < 1 || opcion > ${#urls[@]} )); then
-        recho "Opción inválida."
-        exit 1
-    fi
+  if ! [[ "$opcion" =~ ^[1-9][0-9]*$ ]] || (( opcion < 1 || opcion > ${#urls[@]} )); then
+    recho "Opción inválida."
+    exit 1
+  fi
 
-    local url="${urls[$((opcion-1))]}"
-    local destino="$HOME/.local/wine"
+  local url="${urls[$((opcion-1))]}"
+  local destino="$HOME/.local/wine"
 
-    gecho "Instalando Wine desde:"
-    echo "$url"
+  gecho "Instalando Wine desde:"
+  echo "$url"
 
-    if [[ -d "$destino" ]]; then
-        gecho "La carpeta $destino ya existe. Se eliminará para reemplazarla."
-        rm -rf "$destino"
-    fi
+  if [[ -d "$destino" ]]; then
+    gecho "La carpeta $destino ya existe. Se eliminará para reemplazarla."
+    rm -rf "$destino"
+  fi
 
-    wget -O "$HOME/wine.tar.xz" "$url" || {
-        recho "Error al descargar Wine desde $url"
-        exit 1
-    }
+  wget -O "$HOME/wine.tar.xz" "$url" || {
+    recho "Error al descargar Wine desde $url"
+    exit 1
+  }
 
-    tar -xf "$HOME/wine.tar.xz" -C "$HOME/.local/" || {
-        recho "Error al descomprimir Wine"
-        exit 1
-    }
+  tar -xf "$HOME/wine.tar.xz" -C "$HOME/.local/" || {
+    recho "Error al extraer Wine"
+    exit 1
+  }
 
-    carpeta_extraida=$(find "$HOME/.local" -maxdepth 1 -type d -name "wine-*-staging-tkg-ntsync-amd64-wow64" -print -quit)
+  carpeta_extraida=$(find "$HOME/.local" -maxdepth 1 -type d \( \
+    -name "wine-*-staging-tkg-ntsync-amd64-wow64" -o \
+    -name "wine-proton-*-amd64-wow64" \
+    \) -print -quit)
 
-    if [[ -z "$carpeta_extraida" ]]; then
-        recho "No se encontró la carpeta extraída."
-        exit 1
-    fi
+  if [[ -z "$carpeta_extraida" ]]; then
+    recho "No se encontró la carpeta extraída."
+    exit 1
+  fi
 
-    mv "$carpeta_extraida" "$destino" || {
-        recho "Error al mover la carpeta extraída."
-        exit 1
-    }
+  mv "$carpeta_extraida" "$destino" || {
+    recho "Error al mover la carpeta extraída."
+    exit 1
+  }
 
-    rm "$HOME/wine.tar.xz"
+  rm "$HOME/wine.tar.xz"
 
-    gecho "Wine con ntsync ha sido instalado correctamente en: $destino"
+  gecho "Wine se ha instalado correctamente en: $destino"
 }
+
 
 create_binary_links() {
     mkdir -p "$HOME/.local/bin"
