@@ -465,6 +465,7 @@ create_wine_shortcut() {
     cat <<EOF2 > "$launcher_path"
 #!/bin/bash
 cd "\$(dirname "\$0")"
+#export WINEDLLOVERRIDES="ejemplo=n,b" // acá podés descomentar y hacer un override de alguna libreria como "export WINEDLLOVERRIDES="winmm=n,b"" 
 exec "$wine_path" "$exe"
 EOF2
 
