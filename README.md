@@ -1,9 +1,9 @@
-# 🍷 SetWINE
+# 🍷 SetWINE/Proton
 A minimalist Bash script to manage and launch bleeding-edge Wine builds on CachyOS and other Linux OS's — all safely isolated in your `$HOME`.
 
 ## ✨ Features
 
-- 🧪 **Bleeding-edge Wine** builds with:
+- 🧪 **Bleeding-edge Wine and Proton** builds with:
   - `ntsync` support
   - `WoW64` (capable of running 32 bit apps without 32 bit system libs)
   - `TKG` patches
@@ -15,7 +15,7 @@ Perfect for gamers, developers, and testers who need multiple advanced Wine buil
 
 ## 📦 Español
 
-`spa_setwine` es un script en Bash, minimalista pero potente, para gestionar y lanzar versiones personalizadas y **bleeding-edge de Wine** en CachyOS y otros sistemas Linux. Todo se instala de forma segura en tu `$HOME`.
+`spa_setwine` es un script en Bash, minimalista pero potente, para gestionar y lanzar versiones personalizadas y **bleeding-edge de Wine op Proton** en CachyOS y otros sistemas Linux. Todo se instala de forma segura en tu `$HOME`.
 
 ### ✨ Características
 

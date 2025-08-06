@@ -65,7 +65,7 @@ check_cachyos() {
   if grep -qi 'cachyos' /etc/os-release; then
     gecho "Sistema operativo identificado como CachyOS."
   else
-    gecho "Advertencia: no estás en CachyOS. Este script fue diseñado para CachyOS y puede no funcionar correctamente. Imposible que rompa algo igual"
+    gecho "Advertencia: no estás en CachyOS. Este script fue diseñado para CachyOS y puede no funcionar correctamente. Lo testeé en Ubuntu una sola vez. Imposible que rompa algo igual"
     read -rp "¿Deseás continuar bajo tu propio riesgo? [s/N]: " respuesta
     case "$respuesta" in
       [sS][iI]|[sS]) 
@@ -456,9 +456,9 @@ create_wine_shortcut() {
 
         rm -rf "$temp_dir"
     else
-        echo "Icon not extracted: missing dependencies."
-        echo "To enable icon extraction, install:"
-        echo "  sudo pacman -S icoutils imagemagick"
+        echo "Icono no extraído: faltan dependencias."
+        echo "Para habilitar la extracción de íconos, instalalas:"
+        echo "  sudo pacman -S icoutils imagemagick o sudop apt install icoutils imagemagick según corresponda"
     fi
 
     # Crear script lanzador
