@@ -320,7 +320,7 @@ setup_dxvk() {
     esac
 
     gecho "Installing $dxvk_ver with winetricks..."
-    WINEDEBUG=-all winetricks "$dxvk_ver" > /dev/null 2>&1
+    WINEDEBUG=-all winetricks --force "$dxvk_ver" > /dev/null 2>&1
 }
 
 
@@ -393,9 +393,10 @@ setup_wine_killer_shortcut() {
 }
 
 install_wineshort2desktop() {
+    local target="$HOME/.local/bin/wineshort2desktop"
     mkdir -p "$HOME/.local/bin"
 
-    cat > "$HOME/.local/bin/wineshort2desktop" <<'EOF'
+    cat > "$target" <<'EOF'
 #!/usr/bin/env bash
 
 create_wine_shortcut() {
@@ -406,6 +407,52 @@ create_wine_shortcut() {
 
     local exe="$1"
     local name="$2"
+
+    # Verificar dependencias necesarias
+    local missing=()
+    command -v wrestool >/dev/null || missing+=("icoutils (wrestool)")
+    command -v convert  >/dev/null || missing+=("imagemagick (convert)")
+    command -v identify >/dev/null || missing+=("imagemagick (identify)")
+
+    if (( ${#missing[@]} > 0 )); then
+        echo "Missing dependencies:"
+        printf '  - %s\n' "${missing[@]}"
+
+        # Detectar package manager
+        local pkg_mgr=""
+        if command -v apt >/dev/null; then
+            pkg_mgr="apt"
+        elif command -v dnf >/dev/null; then
+            pkg_mgr="dnf"
+        elif command -v pacman >/dev/null; then
+            pkg_mgr="pacman"
+        fi
+
+        if [[ -n "$pkg_mgr" ]]; then
+            echo "The following packages are required: imagemagick, icoutils"
+            read -rp "Do you want to install them now? [y/n]: " resp
+            if [[ "$resp" =~ ^[Yy]$ ]]; then
+                case "$pkg_mgr" in
+                    apt)
+                        sudo apt update && sudo apt install -y imagemagick icoutils
+                        ;;
+                    dnf)
+                        sudo dnf install -y imagemagick icoutils
+                        ;;
+                    pacman)
+                        sudo pacman -Sy --noconfirm imagemagick icoutils
+                        ;;
+                esac
+            else
+                echo "Aborting: dependencies not installed."
+                return 1
+            fi
+        else
+            echo "No compatible package manager found (apt, dnf, pacman)."
+            echo "Please install the following packages manually: imagemagick, icoutils"
+            return 1
+        fi
+    fi
 
     local cwd
     cwd="$(pwd)"
@@ -421,55 +468,50 @@ create_wine_shortcut() {
         return 1
     fi
 
-    # Extract icons with wrestool if tools are available
-    if command -v wrestool >/dev/null && command -v convert >/dev/null && command -v identify >/dev/null; then
-        local temp_dir
-        temp_dir="$(mktemp -d)"
-        wrestool -x --type=14 "$exe_path" -o "$temp_dir" 2>/dev/null
+    # Extraer íconos si están las herramientas
+    local temp_dir
+    temp_dir="$(mktemp -d)"
+    wrestool -x --type=14 "$exe_path" -o "$temp_dir" 2>/dev/null
 
-        shopt -s nullglob
-        for ico in "$temp_dir"/*.ico; do
-            convert "$ico" "${ico%.ico}.png" 2>/dev/null
-        done
+    shopt -s nullglob
+    for ico in "$temp_dir"/*.ico; do
+        convert "$ico" "${ico%.ico}.png" 2>/dev/null
+    done
 
-        local best_png=""
-        local best_area=0
-        for png in "$temp_dir"/*.png; do
-            local dimensions
-            dimensions=$(identify -format "%w %h" "$png" 2>/dev/null)
-            local width height area
-            read -r width height <<< "$dimensions"
-            area=$((width * height))
-            if (( area > best_area )); then
-                best_area=$area
-                best_png="$png"
-            fi
-        done
-
-        if [[ -n "$best_png" ]]; then
-            cp "$best_png" "$icon_path"
-            echo "Icon extracted: $icon_path"
-        else
-            echo "Icon extraction failed: no suitable images found."
+    local best_png=""
+    local best_area=0
+    for png in "$temp_dir"/*.png; do
+        local dimensions
+        dimensions=$(identify -format "%w %h" "$png" 2>/dev/null)
+        local width height area
+        read -r width height <<< "$dimensions"
+        area=$((width * height))
+        if (( area > best_area )); then
+            best_area=$area
+            best_png="$png"
         fi
+    done
 
-        rm -rf "$temp_dir"
+    if [[ -n "$best_png" ]]; then
+        cp "$best_png" "$icon_path"
+        echo "Icon extracted: $icon_path"
     else
-        echo "Icon not extracted: missing dependencies."
-        echo "To enable icon extraction, install:"
-        echo "  sudo pacman -S icoutils imagemagick or sudo apt install icoutils imagemagick"
+        echo "Icon extraction failed: no suitable images found."
     fi
 
-    # Create launcher script
+    rm -rf "$temp_dir"
+
+    # Crear lanzador
     cat <<EOF2 > "$launcher_path"
 #!/bin/bash
 cd "\$(dirname "\$0")"
+#export WINEDLLOVERRIDES="example=n,b" // here you can export libraries, handy for hacks that require custom libs, example: "export WINEDLLOVERRIDES="winmm=n,b"" 
 exec "$wine_path" "$exe"
 EOF2
 
     chmod +x "$launcher_path"
 
-    # Create shortcut
+    # Crear acceso directo
     cat <<EOF2 > "$shortcut_path"
 [Desktop Entry]
 Encoding=UTF-8
@@ -492,10 +534,10 @@ EOF2
 create_wine_shortcut "$@"
 EOF
 
-    chmod +x "$HOME/.local/bin/wineshort2desktop"
+    chmod +x "$target"
     gecho "Script 'wineshort2desktop' installed in ~/.local/bin/"
+    gecho "Now you will be able to create shortcut for your wine games with this script rioght to the desktop"
 }
-
 
 ######################################################################################################
 
