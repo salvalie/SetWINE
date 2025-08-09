@@ -319,11 +319,10 @@ setup_dxvk() {
         *) recho "Invalid option. Aborting DXVK setup." ; return 1 ;;
     esac
 
-    gecho "Installing $dxvk_ver with winetricks..."
-    WINEDEBUG=-all winetricks --force "$dxvk_ver" > /dev/null 2>&1
+    gecho "Installing $dxvk_ver (DX8/9/10/11) and latest vkd3d(DX12) with winetricks..."
+    gecho "I would extremely recommend to install "cabextract" with pacman or apt to use winetricks for other stuff"
+    WINEDEBUG=-all winetricks --force "$dxvk_ver" vkd3d > /dev/null 2>&1
 }
-
-
 
 setup_wayland() {
     if ! command -v winetricks &> /dev/null; then
