@@ -320,8 +320,9 @@ setup_dxvk() {
         *) recho "Opción inválida. Abortando configuración DXVK." ; return 1 ;;
     esac
 
-    gecho "Instalando $dxvk_ver con winetricks..."
-    WINEDEBUG=-all winetricks --force "$dxvk_ver" > /dev/null 2>&1
+    gecho "Instalando $dxvk_ver (DX8/9/10/11) y lo último de vkd3d(DX12) con winetricks..."
+    gecho "Recomiendo instalar "cabextract" con pacman o apt para instalar cualquier cosa más con winetricks"
+    WINEDEBUG=-all winetricks --force "$dxvk_ver" vkd3d > /dev/null 2>&1
 }
 
 
