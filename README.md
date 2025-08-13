@@ -184,5 +184,3 @@ wineshort2desktop MiJuego.exe "Mi Juego"
 ```
 
 ---
-
-Si querés, puedo además dejarte **la tabla de inglés ↔ español lado a lado** para que el README sea bilingüe y no tengas que mantener dos bloques separados. Eso haría que quede aún más prolijo y fácil de mantener.
