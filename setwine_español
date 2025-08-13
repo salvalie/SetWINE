@@ -1,21 +1,37 @@
 #!/usr/bin/env bash
 
-
 #######################################################################################
 
-# Warnings handler
-set -o errtrace 
-
-trap 'func=${FUNCNAME[1]:-main}; echo "WARNING: función \"${func}\" devolvió error" >&2' ERR
-
-# Defining gecho as Green (success) and recho as Red (error/warning) for echo's
+# Defining gecho as Green (success) and recho as Red (error) for echo's
 GREEN='\033[0;32m'; RED='\033[0;31m'; RESET='\033[0m'
 
 gecho(){ printf '%b\n' "${GREEN}$*${RESET}"; }
 recho(){ printf '%b\n' "${RED}$*${RESET}"; }
 
-
 ########################################################################################
+
+uninstall_wine() {
+    shopt -s nullglob
+    local files=( "$HOME/.local/bin"/wine* )
+    if [ ${#files[@]} -gt 0 ]; then
+        echo "Borrando archivos:"
+        printf " - %s\n" "${files[@]}"
+        rm -f "${files[@]}"
+    else
+        echo "No hay archivos wine* en ~/.local/bin"
+    fi
+    shopt -u nullglob
+
+    for dir in "$HOME/.local/bin/wine" "$HOME/.local/wine" "$HOME/.wine" "$HOME/.cache/winetricks"; do
+        if [ -d "$dir" ]; then
+            echo "Borrando directorio: $dir"
+            rm -rf "$dir"
+        else
+            echo "No existen, nada que borrar."
+        fi
+    done
+}
+
 
 check_internet() {
   gecho "Verificando conexión an Internet ..."
@@ -45,8 +61,8 @@ check_wine_installed() {
   if [[ -d "$HOME/.local/wine" ]]; then
     gecho "Se detectó una instalación previa de Wine en ~/.local/wine."
     gecho "Por si acaso no vamos a remover .wine (tu prefix o "disco C" de Wine)"
-    read -rp "¿Deseás eliminar Wine (no tu prefix) y continuar con una nueva instalación? [s/N]: " respuesta
-    case "$respuesta" in
+    read -rp "¿Deseás eliminar Wine (no tu prefix) y continuar con una nueva instalación? [s/N]: " answer
+    case "$answer" in
       [sS][iI]|[sS])
         gecho "Eliminando ~/.local/wine..."
         rm -rf "$HOME/.local/wine"
@@ -66,8 +82,8 @@ check_cachyos() {
     gecho "Sistema operativo identificado como CachyOS."
   else
     gecho "Advertencia: no estás en CachyOS. Este script fue diseñado para CachyOS y puede no funcionar correctamente. Lo testeé en Ubuntu una sola vez. Imposible que rompa algo igual"
-    read -rp "¿Deseás continuar bajo tu propio riesgo? [s/N]: " respuesta
-    case "$respuesta" in
+    read -rp "¿Deseás continuar bajo tu propio riesgo? [s/N]: " answer
+    case "$answer" in
       [sS][iI]|[sS]) 
         gecho "Continuando..."
         ;;
@@ -88,20 +104,20 @@ general_check() {
 
 check_wine_ntsync_and_proton_wow64() {
   local url_api="https://api.github.com/repos/Kron4ek/Wine-Builds/releases"
-  local respuesta=$(wget -qO- "$url_api")
+  local answer=$(wget -qO- "$url_api")
 
-  if [[ -z "$respuesta" ]]; then
-    recho "No se pudo obtener respuesta de la API de GitHub."
+  if [[ -z "$answer" ]]; then
+    recho "No se pudo obtener answer de la API de GitHub."
     return 1
   fi
 
-  local ntsync_urls=($(echo "$respuesta" \
+  local ntsync_urls=($(echo "$answer" \
     | grep -oE '"browser_download_url": ?"[^"]*wine-[0-9]+\.[0-9]+(-[0-9]+)?-staging-tkg-ntsync-amd64-wow64\.tar\.xz"' \
     | sed -E 's/.*"([^"]+)"/\1/' \
     | sort -Vr \
     | head -n 5))
 
-  local proton_urls=($(echo "$respuesta" \
+  local proton_urls=($(echo "$answer" \
     | grep -oE '"browser_download_url": ?"[^"]*wine-proton-[0-9]+\.[0-9]+(-[0-9]+)?-amd64-wow64\.tar\.xz"' \
     | sed -E 's/.*"([^"]+)"/\1/' \
     | sort -Vr \
@@ -128,23 +144,23 @@ install_wine() {
     ((i++))
   done
 
-  local opcion
-  read -rp "Ingrese el número de la versión deseada [1-${#urls[@]}]: " opcion
+  local option
+  read -rp "Ingrese el número de la versión deseada [1-${#urls[@]}]: " option
 
-  if ! [[ "$opcion" =~ ^[1-9][0-9]*$ ]] || (( opcion < 1 || opcion > ${#urls[@]} )); then
+  if ! [[ "$option" =~ ^[1-9][0-9]*$ ]] || (( option < 1 || option > ${#urls[@]} )); then
     recho "Opción inválida."
     exit 1
   fi
 
-  local url="${urls[$((opcion-1))]}"
-  local destino="$HOME/.local/wine"
+  local url="${urls[$((option-1))]}"
+  local target="$HOME/.local/wine"
 
   gecho "Instalando Wine desde:"
   echo "$url"
 
-  if [[ -d "$destino" ]]; then
-    gecho "La carpeta $destino ya existe. Se eliminará para reemplazarla."
-    rm -rf "$destino"
+  if [[ -d "$target" ]]; then
+    gecho "La carpeta $target ya existe. Se eliminará para reemplazarla."
+    rm -rf "$target"
   fi
 
   wget -O "$HOME/wine.tar.xz" "$url" || {
@@ -157,24 +173,24 @@ install_wine() {
     exit 1
   }
 
-  carpeta_extraida=$(find "$HOME/.local" -maxdepth 1 -type d \( \
+  extracted_folder=$(find "$HOME/.local" -maxdepth 1 -type d \( \
     -name "wine-*-staging-tkg-ntsync-amd64-wow64" -o \
     -name "wine-proton-*-amd64-wow64" \
     \) -print -quit)
 
-  if [[ -z "$carpeta_extraida" ]]; then
+  if [[ -z "$extracted_folder" ]]; then
     recho "No se encontró la carpeta extraída."
     exit 1
   fi
 
-  mv "$carpeta_extraida" "$destino" || {
+  mv "$extracted_folder" "$target" || {
     recho "Error al mover la carpeta extraída."
     exit 1
   }
 
   rm "$HOME/wine.tar.xz"
 
-  gecho "Wine se ha instalado correctamente en: $destino"
+  gecho "Wine se ha seteado correctamente en: $target"
 }
 
 
@@ -185,7 +201,27 @@ create_binary_links() {
 export WINEFSYNC=1
 export WINENTSYNC=1
 export MANGOHUD=1
-exec "$HOME/.local/wine/bin/wine" "\$@"
+
+# 16-bit check
+TARGET=""
+for arg in "\$@"; do
+    if [[ -f "\$arg" && "\$arg" =~ \.(exe|EXE|com|COM)$ ]]; then
+        TARGET="\$arg"
+        break
+    fi
+done
+
+if [[ -n "\$TARGET" ]]; then
+    FILEINFO=\$(file -b "\$TARGET")
+
+    if echo "\$FILEINFO" | grep -Eqi "MS-DOS executable|NE executable"; then
+        exec "\$HOME/.local/wine/bin/wine" "\$HOME/.local/otvdm/otvdm.exe" "\$TARGET"
+    else
+        exec "\$HOME/.local/wine/bin/wine" "\$@"
+    fi
+else
+    exec "\$HOME/.local/wine/bin/wine" "\$@"
+fi
 EOF
     chmod +x "$HOME/.local/bin/wine"
     ln -sf "$HOME/.local/wine/bin/winecfg" "$HOME/.local/bin/winecfg"
@@ -193,6 +229,7 @@ EOF
     ln -sf "$HOME/.local/wine/bin/wineboot" "$HOME/.local/bin/wineboot"
     gecho "Enlaces simbólicos creados en ~/.local/bin y wrapper para wine creado."
 }
+
 
 add_local_bin() {
     check_shell() {
@@ -207,37 +244,37 @@ add_local_bin() {
         fi
     }
 
-    shell_actual=$(check_shell)
-    case "$shell_actual" in
+    current_shell=$(check_shell)
+    case "$current_shell" in
         bash)
-            archivo_bash="$HOME/.bashrc"
-            if ! grep -q "export PATH=\$PATH:\$HOME/.local/bin" "$archivo_bash"; then
-                echo "export PATH=\$PATH:\$HOME/.local/bin" >> "$archivo_bash"
-                gecho "Se ha agregado ~/.local/bin al PATH en $archivo_bash."
+            bash_file="$HOME/.bashrc"
+            if ! grep -q "export PATH=\$PATH:\$HOME/.local/bin" "$bash_file"; then
+                echo "export PATH=\$PATH:\$HOME/.local/bin" >> "$bash_file"
+                gecho "Se ha agregado ~/.local/bin al PATH en $bash_file."
             else
-                gecho "Ya está agregado ~/.local/bin al PATH en $archivo_bash."
+                gecho "Ya está agregado ~/.local/bin al PATH en $bash_file."
             fi
             export PATH="$PATH:$HOME/.local/bin"
             ;;
         zsh)
-            archivo_zsh="$HOME/.zshrc"
-            if ! grep -q "export PATH=\$PATH:\$HOME/.local/bin" "$archivo_zsh"; then
-                echo "export PATH=\$PATH:\$HOME/.local/bin" >> "$archivo_zsh"
-                gecho "Se ha agregado ~/.local/bin al PATH en $archivo_zsh."
+            zsh_file="$HOME/.zshrc"
+            if ! grep -q "export PATH=\$PATH:\$HOME/.local/bin" "$zsh_file"; then
+                echo "export PATH=\$PATH:\$HOME/.local/bin" >> "$zsh_file"
+                gecho "Se ha agregado ~/.local/bin al PATH en $zsh_file."
             else
-                gecho "Ya está agregado ~/.local/bin al PATH en $archivo_zsh."
+                gecho "Ya está agregado ~/.local/bin al PATH en $zsh_file."
             fi
             export PATH="$PATH:$HOME/.local/bin"
             ;;
         fish)
-            archivo_fish="$HOME/.config/fish/config.fish"
-            if ! grep -q "set -gx PATH \$HOME/.local/bin \$PATH" "$archivo_fish"; then
-                echo "set -gx PATH \$HOME/.local/bin \$PATH" >> "$archivo_fish"
-                gecho "Se ha agregado ~/.local/bin al PATH en $archivo_fish."
+            fish_file="$HOME/.config/fish/config.fish"
+            if ! grep -q "set -gx PATH \$HOME/.local/bin \$PATH" "$fish_file"; then
+                echo "set -gx PATH \$HOME/.local/bin \$PATH" >> "$fish_file"
+                gecho "Se ha agregado ~/.local/bin al PATH en $fish_file."
             else
-                gecho "Ya está agregado ~/.local/bin al PATH en $archivo_fish."
+                gecho "Ya está agregado ~/.local/bin al PATH en $fish_file."
             fi
-            # Aplica de inmediato en fish
+
             if command -v fish &> /dev/null; then
                 fish -c "set -gx PATH \$HOME/.local/bin \$PATH"
             fi
@@ -256,6 +293,7 @@ install_winetricks() {
     }
 
     sed -i '/^#!/a export W_OPT_UNATTENDED=1' "$HOME/.local/bin/winetricks"
+    sed -i '/^#!/a export WINETRICKS_LATEST_VERSION_CHECK=disabled' "$HOME/.local/bin/winetricks"
     chmod +x "$HOME/.local/bin/winetricks"
     gecho "Winetricks instalado correctamente."
 }
@@ -293,8 +331,8 @@ EOF
 
 setup_prefix() {
     if ! command -v wine &> /dev/null; then
-        recho "Error: wine no está instalado."
-        return 1
+        recho "Error: wine no está instalado correctamente."
+        exit 1
     fi
 
     WINEDEBUG=-all wineboot --init > /dev/null 2>&1
@@ -311,9 +349,9 @@ setup_dxvk() {
     gecho "  1) dxvk2041 (estable para intel)"
     gecho "  2) dxvk2051"
     gecho "  3) dxvk (última disponible)"
-    read -rp "Elegí una opción [1-3]: " opcion
+    read -rp "Elegí una opción [1-3]: " option
 
-    case "$opcion" in
+    case "$option" in
         1) dxvk_ver="dxvk2041" ;;
         2) dxvk_ver="dxvk2051" ;;
         3) dxvk_ver="dxvk" ;;
@@ -335,7 +373,7 @@ setup_wayland() {
 
     if [ "$XDG_SESSION_TYPE" != "wayland" ]; then
         recho "No estás en una sesión Wayland. Dejando x11"
-        return 1
+        return 0
     fi
 
     gecho "Vamos a habilitar el modo Wayland. Para volver a X11 usá 'winetricks graphics=x11'."
@@ -541,6 +579,40 @@ EOF
     gecho "Ahora podés crear accesos directos para tus juegos de Wine directamente en el escritorio usando este script."
 }
 
+download_latest_otvdm() {
+    local DEST="$HOME/.local/otvdm"
+    local LATEST_URL TAG ZIP_URL TMPDIR UNPACK_DIR TMPZIP entries srcdir
+
+    LATEST_URL=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/otya128/winevdm/releases/latest)
+    TAG="${LATEST_URL##*/}"
+    ZIP_URL="https://github.com/otya128/winevdm/releases/download/${TAG}/otvdm-${TAG}.zip"
+
+    TMPDIR=$(mktemp -d)
+    UNPACK_DIR="$TMPDIR/unpack"
+    mkdir -p "$UNPACK_DIR"
+    TMPZIP="$TMPDIR/otvdm.zip"
+
+    gecho "Descargando $ZIP_URL..."
+    curl -L --fail -o "$TMPZIP" "$ZIP_URL"
+    unzip -q "$TMPZIP" -d "$UNPACK_DIR"
+    rm -rf "${DEST:?}"
+    mkdir -p "$DEST"
+
+    shopt -s dotglob nullglob
+    entries=( "$UNPACK_DIR"/* )
+    if [ "${#entries[@]}" -eq 1 ] && [ -d "${entries[0]}" ]; then
+        srcdir="${entries[0]}"
+        mv "$srcdir"/* "$DEST"/ || true
+    else
+        mv "$UNPACK_DIR"/* "$DEST"/ || true
+    fi
+    shopt -u dotglob nullglob
+
+    rm -rf "$TMPDIR"
+
+    gecho "Instalado ${TAG} en $DEST"
+}
+
 ######################################################################################################
 
 main_loop() {
@@ -549,47 +621,44 @@ main_loop() {
     general_check
 
     gecho "----------> Instalando Wine personalizado..."
-    
     install_wine
 
     gecho "----------> Creando enlaces simbólicos..."
-    
     create_binary_links
 
     gecho "----------> Asegurando que ~/.local/bin esté en el PATH..."
-    
     add_local_bin
 
     gecho "----------> Instalando Winetricks..."
-    
     install_winetricks
 
     gecho "----------> Inicializando el prefix..."
-
     setup_prefix
 
     gecho "----------> Instalando DXVK..."
-
     setup_dxvk
 
     gecho "----------> Configurando para usar Wayland..."
-
     setup_wayland
 
     gecho "----------> Creando lanzador de Wine..."
-
     create_wine_launcher
 
     gecho "----------> Agregando atajo de teclado para cerrar Wine con CTRL + ALT + Q ..."
-
     setup_wine_killer_shortcut
 
-    gecho "----------> Creando el creado de shortcuts para Escritorio "wineshort2desktop"..."
-
+    gecho "----------> Creando el creador de shortcuts para Escritorio \"wineshort2desktop\"..."
     install_wineshort2desktop
+
+    gecho "----------> Añadiendo soporte experimental de apps de 16 bits de Windows (solo para wine-tkg, no parece andar en Proton)..."
+    download_latest_otvdm
     
     gecho "=========== INSTALACIÓN COMPLETA ==========="
     gecho "Desloguea sesión y volve a loguear!"
 }
 
-main_loop
+if [ "$1" = "uninstall" ]; then
+    uninstall_wine
+else
+    main_loop
+fi

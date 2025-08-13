@@ -5,7 +5,7 @@
 
 SetWine is a Bash script for installing and configuring Wine/Proton WoW64 x86_64 builds with NTsync, DXVK, and Wayland support on Linux systems.  
 The script supports Wine and Proton from Kron4ek Repo.
-
+It can run 64,32 and 16 bit Windows apps with a pure 64 bit x86_64 system.
 ---
 
 ## 🛠 Features
@@ -20,6 +20,8 @@ The script supports Wine and Proton from Kron4ek Repo.
 - Desktop shortcut creator: A tool called `wineshort2desktop` is installed to generate `.desktop` launchers with auto-extracted icons from `.exe` files.
 - Tries to create a custom kill shortcut: Sets up a `Ctrl+Alt+Q` shortcut to kill Wine processes on supported desktops.
 - Safe by design: Can be removed easily. No risk of corrupting your system install.
+- 16-bit windows apps supṕort with https://github.com/otya128/winevdm (on wine-tkg)
+
 
 ---
 
@@ -43,8 +45,14 @@ chmod +x setwine
 ./setwine
 ```
 
+## 🚀 Uninstallation
+
+```bash
+./setwine uninstall
+```
 
 ---
+
 
 ## ⚙️ What the script does
 
@@ -90,6 +98,7 @@ wineshort2desktop MyGame.exe "My Game"
 SetWine es un script en Bash para instalar y configurar compilaciones de Wine/Proton WoW64 x86_64 con soporte NTsync, DXVK y Wayland en sistemas Linux.  
 El script soporta Wine y Proton desde el repositorio de Kron4ek.
 
+Puede correr 64,32 y 16 bit Windows apps con un sistema puro de 64 bits (x86_64).
 ---
 
 ## 🛠 Características
@@ -104,6 +113,7 @@ El script soporta Wine y Proton desde el repositorio de Kron4ek.
 - Creador de accesos directos de escritorio: instala `wineshort2desktop` para generar lanzadores `.desktop` con íconos extraídos automáticamente de los archivos `.exe`.  
 - Intenta crear un atajo personalizado para matar procesos: configura un atajo `Ctrl+Alt+Q` para terminar procesos de Wine en escritorios compatibles.  
 - Seguro por diseño: se puede eliminar fácilmente. Sin riesgo de dañar tu instalación del sistema.
+- 16-bit windows apps soportadas gracias a https://github.com/otya128/winevdm (en wine-tkg)
 
 ---
 
@@ -123,10 +133,14 @@ Clona el repositorio y ejecuta el script:
 ```bash
 git clone https://github.com/yourname/SetWine.git
 cd SetWine
-chmod +x setwine
-./setwine
+chmod +x setwine_español
+./setwine_español
 ```
+## 🚀 Desinstalación
 
+```bash
+./setwine_español uninstall
+```
 ---
 
 ## ⚙️ Qué hace el script
