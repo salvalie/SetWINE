@@ -665,6 +665,7 @@ main_loop() {
     download_latest_otvdm
 
     gecho "=========== INSTALLATION COMPLETED ==========="
+    gecho "Please, logout and login again!"
 }
 
 if [[ "$1" == "uninstall" ]]; then
