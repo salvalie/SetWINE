@@ -576,7 +576,7 @@ EOF
 
     chmod +x "$target"
     gecho "Script 'wineshort2desktop' installed in ~/.local/bin/"
-    gecho "Know you can try to link your wine games to the desktop like any old man."
+    gecho "now you can link your wine games to the desktop with 'wineshort2desktop' ."
 }
 
 download_latest_otvdm() {
