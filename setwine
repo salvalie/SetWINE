@@ -470,7 +470,7 @@ create_wine_shortcut() {
 
         if [[ -n "$pkg_mgr" ]]; then
             echo "The next packagers are required: imagemagick, icoutils"
-            read -rp "¿Do you want to install them? [s/n]: " resp
+            read -rp "¿Do you want to install them? [y/n]: " resp
             if [[ "$resp" =~ ^[Yy]$ ]]; then
                 case "$pkg_mgr" in
                     apt)
