@@ -75,7 +75,6 @@ check_wine_installed() {
   fi
 }
 
-
 check_cachyos() {
   gecho "Checking if you are on CachyOS..."
   if grep -qi 'cachyos' /etc/os-release; then
@@ -104,23 +103,26 @@ general_check() {
 
 check_wine_ntsync_and_proton_wow64() {
   local url_api="https://api.github.com/repos/Kron4ek/Wine-Builds/releases"
-  local answer=$(wget -qO- "$url_api")
+  local answer
+  answer=$(wget -qO- "$url_api")
 
   if [[ -z "$answer" ]]; then
-    recho "Could not get answer from GitHub API."
+    echo "❌ Could not get answer from GitHub API."
     return 1
   fi
 
+  # Match staging builds (with or without -ntsync-)
   local ntsync_urls=($(echo "$answer" \
-    | grep -oE '"browser_download_url": ?"[^"]*wine-[0-9]+\.[0-9]+(-[0-9]+)?-staging-tkg-ntsync-amd64-wow64\.tar\.xz"' \
+    | grep -oE '"browser_download_url": ?"[^"]*wine-[0-9]+\.[0-9]+(-[0-9]+)?-staging-tkg(-ntsync)?-amd64-wow64\.tar\.xz"' \
     | sed -E 's/.*"([^"]+)"/\1/' \
-    | sort -Vr \
+    | sort -V -r \
     | head -n 5))
 
+  # Match proton builds
   local proton_urls=($(echo "$answer" \
     | grep -oE '"browser_download_url": ?"[^"]*wine-proton-[0-9]+\.[0-9]+(-[0-9]+)?-amd64-wow64\.tar\.xz"' \
     | sed -E 's/.*"([^"]+)"/\1/' \
-    | sort -Vr \
+    | sort -V -r \
     | head -n 5))
 
   printf '%s\n' "${ntsync_urls[@]}" "${proton_urls[@]}"
@@ -173,13 +175,16 @@ install_wine() {
     exit 1
   }
 
+  # ✅ Support both ntsync and non-ntsync names
   extracted_folder=$(find "$HOME/.local" -maxdepth 1 -type d \( \
+    -name "wine-*-staging-tkg-amd64-wow64" -o \
     -name "wine-*-staging-tkg-ntsync-amd64-wow64" -o \
     -name "wine-proton-*-amd64-wow64" \
     \) -print -quit)
 
   if [[ -z "$extracted_folder" ]]; then
-    recho "Extracted folder not found."
+    recho "Extracted folder not found. Available directories:"
+    find "$HOME/.local" -maxdepth 1 -type d -printf "  %f\n"
     exit 1
   fi
 
@@ -190,9 +195,8 @@ install_wine() {
 
   rm "$HOME/wine.tar.xz"
 
-  gecho "Wine has been set up correctly at: $target"
+  gecho "✅ Wine has been set up correctly at: $target"
 }
-
 
 create_binary_links() {
     mkdir -p "$HOME/.local/bin"
