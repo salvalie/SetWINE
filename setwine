@@ -549,7 +549,8 @@ create_wine_shortcut() {
     cat <<EOF2 > "$launcher_path"
 #!/bin/bash
 cd "\$(dirname "\$0")"
-#export WINEDLLOVERRIDES="example=n,b" // here you can export libraries, handy for hacks that require custom libs, example: "export WINEDLLOVERRIDES="winmm=n,b"" 
+#export WINEDLLOVERRIDES="example=n,b" // here you can export libraries, handy for hacks that require custom libs, example: "export WINEDLLOVERRIDES="winmm=n,b""
+#export DXVK_FRAME_RATE=30 
 exec "$wine_path" "$exe"
 EOF2
 
