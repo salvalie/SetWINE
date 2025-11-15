@@ -75,30 +75,10 @@ check_wine_installed() {
   fi
 }
 
-check_cachyos() {
-  gecho "Checking if you are on CachyOS..."
-  if grep -qi 'cachyos' /etc/os-release; then
-    gecho "Operating system identified as CachyOS."
-  else
-    gecho "Warning: you are not on CachyOS. This script was designed for CachyOS and may not work correctly. I tested it on Ubuntu only once. Impossible to break anything though."
-    read -rp "Do you want to continue at your own risk? [y/N]: " answer
-    case "$answer" in
-      [yY][eE][sS]|[yY]) 
-        gecho "Continuing..."
-        ;;
-      *)
-        recho "Aborting installation."
-        exit 1
-        ;;
-    esac
-  fi
-}
-
 general_check() {
   check_internet
   check_architecture
   check_wine_installed
-  check_cachyos
 }
 
 check_wine_ntsync_and_proton_wow64() {

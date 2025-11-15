@@ -60,7 +60,7 @@ chmod +x setwine
    * Internet connection
    * CPU architecture (`x86_64`)
    * Existing Wine installations
-   * (Optional) Recommends CachyOS
+
 
 2. Downloads & installs Wine from Kron4ek:
 
