@@ -1,0 +1,6 @@
+# Ignore Gemini CLI configuration files
+gemini.yml
+config.md
+.gemini/
+*.geminicfg
+GEMINI.md
