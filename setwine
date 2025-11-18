@@ -51,23 +51,23 @@ check_architecture() {
 }
 
 check_wine_installed() {
-  gecho "Checking if Wine is already installed..."
-
   if command -v wine >/dev/null 2>&1 && [[ "$(command -v wine)" != "$HOME/.local/bin/wine" ]]; then
-    recho "Wine is already installed globally on the system. Aborting installation."
+    dialog --title "Error" --msgbox "Wine is already installed globally on the system. Aborting installation." 8 60
     exit 1
   fi
 
   if [[ -d "$HOME/.local/wine" ]]; then
-    gecho "A previous Wine installation was detected in ~/.local/wine."
-    gecho "For safety we will not remove .wine (your Wine prefix or C: drive)"
-    read -rp "Do you want to remove Wine (not your prefix) and continue with a new installation? [y/N]: " answer
-    case "$answer" in
-      [yY][eE][sS]|[yY])
-        gecho "Removing ~/.local/wine..."
+    dialog --title "Warning" --yesno "A previous SetWINE installation was detected. For safety we will not remove .wine (your Wine prefix or C: drive). Do you want to remove the previous installation and continue with a new one?" 12 70
+    response=$?
+    case $response in
+      0)
         rm -rf "$HOME/.local/wine"
         ;;
-      *)
+      1)
+        recho "Aborting installation."
+        exit 1
+        ;;
+      255)
         recho "Aborting installation."
         exit 1
         ;;
@@ -75,10 +75,24 @@ check_wine_installed() {
   fi
 }
 
+check_kernel_version() {
+    local kernel_version
+    kernel_version=$(uname -r)
+    local major_version
+    major_version=$(echo "$kernel_version" | cut -d. -f1)
+    local minor_version
+    minor_version=$(echo "$kernel_version" | cut -d. -f2)
+
+    if [[ "$major_version" -lt 6 ]] || ([[ "$major_version" -eq 6 ]] && [[ "$minor_version" -lt 15 ]]); then
+        dialog --title "Warning" --yesno "Your kernel version is older than 6.15. NTSYNC may not be available, so it is recommended to install a Proton version of Wine for better compatibility. You can also try a custom kernel like Liquorix: https://liquorix.net. Would you like to see only Proton versions?" 12 70
+        return $?
+    fi
+    return 255 # Return a value that indicates no dialog was shown
+}
+
 general_check() {
   check_internet
   check_architecture
-  check_wine_installed
 }
 
 check_wine_ntsync_and_proton_wow64() {
@@ -94,14 +108,14 @@ check_wine_ntsync_and_proton_wow64() {
   # Match staging builds (with or without -ntsync-)
   local ntsync_urls=($(echo "$answer" \
     | grep -oE '"browser_download_url": ?"[^"]*wine-[0-9]+\.[0-9]+(-[0-9]+)?-staging-tkg(-ntsync)?-amd64-wow64\.tar\.xz"' \
-    | sed -E 's/.*"([^"]+)"/\1/' \
+    | sed -E 's/.*"([^"]+)"/\\1/' \
     | sort -V -r \
     | head -n 5))
 
   # Match proton builds
   local proton_urls=($(echo "$answer" \
     | grep -oE '"browser_download_url": ?"[^"]*wine-proton-[0-9]+\.[0-9]+(-[0-9]+)?-amd64-wow64\.tar\.xz"' \
-    | sed -E 's/.*"([^"]+)"/\1/' \
+    | sed -E 's/.*"([^"]+)"/\\1/' \
     | sort -V -r \
     | head -n 5))
 
@@ -109,73 +123,47 @@ check_wine_ntsync_and_proton_wow64() {
 }
 
 install_wine() {
-  gecho "Looking for Wine ntsync and Proton WOW64 versions..."
-  mapfile -t urls < <(check_wine_ntsync_and_proton_wow64)
-
-  urls=($(printf '%s\n' "${urls[@]}" | grep -E '^https?://'))
-
-  if [[ ${#urls[@]} -eq 0 ]]; then
-    recho "No available Wine versions found."
-    exit 1
-  fi
-
-  gecho "Select the Wine version you want to install:"
-  local i=1
-  for url in "${urls[@]}"; do
-    echo "  $i) $url"
-    ((i++))
-  done
-
-  local option
-  read -rp "Enter the number of the desired version [1-${#urls[@]}]: " option
-
-  if ! [[ "$option" =~ ^[1-9][0-9]*$ ]] || (( option < 1 || option > ${#urls[@]} )); then
-    recho "Invalid option."
-    exit 1
-  fi
-
-  local url="${urls[$((option-1))]}"
+  local url=$1
+  local log_file=$2
   local target="$HOME/.local/wine"
 
-  gecho "Installing Wine from:"
-  echo "$url"
+  echo "Looking for Wine ntsync and Proton WOW64 versions..." >> "$log_file"
+  echo "Installing Wine from: $url" >> "$log_file"
 
   if [[ -d "$target" ]]; then
-    gecho "Folder $target already exists. It will be deleted to replace it."
+    echo "Folder $target already exists. It will be deleted to replace it." >> "$log_file"
     rm -rf "$target"
   fi
 
-  wget -O "$HOME/wine.tar.xz" "$url" || {
-    recho "Error downloading Wine from $url"
-    exit 1
+  wget -O "$HOME/wine.tar.xz" "$url" >> "$log_file" 2>&1 || {
+    echo "Error downloading Wine from $url" >> "$log_file"
+    return 1
   }
 
-  tar -xf "$HOME/wine.tar.xz" -C "$HOME/.local/" || {
-    recho "Error extracting Wine"
-    exit 1
+  tar -xf "$HOME/wine.tar.xz" -C "$HOME/.local/" >> "$log_file" 2>&1 || {
+    echo "Error extracting Wine" >> "$log_file"
+    return 1
   }
 
-  # ✅ Support both ntsync and non-ntsync names
-  extracted_folder=$(find "$HOME/.local" -maxdepth 1 -type d \( \
+  extracted_folder=$(find "$HOME/.local" -maxdepth 1 -type d \
     -name "wine-*-staging-tkg-amd64-wow64" -o \
     -name "wine-*-staging-tkg-ntsync-amd64-wow64" -o \
-    -name "wine-proton-*-amd64-wow64" \
-    \) -print -quit)
+    -name "wine-proton-*-amd64-wow64"
+    ) -print -quit)
 
   if [[ -z "$extracted_folder" ]]; then
-    recho "Extracted folder not found. Available directories:"
-    find "$HOME/.local" -maxdepth 1 -type d -printf "  %f\n"
-    exit 1
+    echo "Extracted folder not found." >> "$log_file"
+    return 1
   fi
 
-  mv "$extracted_folder" "$target" || {
-    recho "Error moving the extracted folder."
-    exit 1
+  mv "$extracted_folder" "$target" >> "$log_file" 2>&1 || {
+    echo "Error moving the extracted folder." >> "$log_file"
+    return 1
   }
 
   rm "$HOME/wine.tar.xz"
 
-  gecho "✅ Wine has been set up correctly at: $target"
+  echo "Wine has been set up correctly at: $target" >> "$log_file"
 }
 
 create_binary_links() {
@@ -324,27 +312,16 @@ setup_prefix() {
 
 
 setup_dxvk() {
+    local dxvk_ver=$1
+    local log_file=$2
     if ! command -v winetricks &> /dev/null; then
-        recho "Error: winetricks is not available."
+        echo "Error: winetricks is not available." >> "$log_file"
         return 1
     fi
 
-    gecho "Which DXVK version do you want to install? You can change it later with winetricks"
-    gecho "  1) dxvk2041 (stable for intel)"
-    gecho "  2) dxvk2051"
-    gecho "  3) dxvk (latest available)"
-    read -rp "Choose an option [1-3]: " option
-
-    case "$option" in
-        1) dxvk_ver="dxvk2041" ;;
-        2) dxvk_ver="dxvk2051" ;;
-        3) dxvk_ver="dxvk" ;;
-        *) recho "Invalid option. Aborting DXVK setup." ; return 1 ;;
-    esac
-
-    gecho "Installing $dxvk_ver (DX8/9/10/11) and latest vkd3d(DX12) with winetricks..."
-    gecho "I recommend installing 'cabextract' with pacman or apt for installing anything else with winetricks"
-    WINEDEBUG=-all winetricks --force "$dxvk_ver" vkd3d > /dev/null 2>&1
+    echo "Installing $dxvk_ver (DX8/9/10/11) and latest vkd3d(DX12) with winetricks..." >> "$log_file"
+    echo "I recommend installing 'cabextract' with pacman or apt for installing anything else with winetricks" >> "$log_file"
+    WINEDEBUG=-all winetricks --force "$dxvk_ver" vkd3d >> "$log_file" 2>&1
 }
 
 
@@ -528,8 +505,8 @@ create_wine_shortcut() {
     # Create launcher
     cat <<EOF2 > "$launcher_path"
 #!/bin/bash
-cd "\$(dirname "\$0")"
-#export WINEDLLOVERRIDES="example=n,b" // here you can export libraries, handy for hacks that require custom libs, example: "export WINEDLLOVERRIDES="winmm=n,b""
+cd "\\\$(dirname "\\")"
+#export WINEDLLOVERRIDES="example=n,b" // here you can export libraries, handy for hacks that require custom libs, example: "export WINEDLLOVERRIDES=\"winmm=n,b\""
 #export DXVK_FRAME_RATE=30 
 exec "$wine_path" "$exe"
 EOF2
@@ -600,62 +577,177 @@ download_latest_otvdm() {
 
 ######################################################################################################
 
-main_loop() {
-    gecho "=========== STARTING INSTALLATION OF WINE WoW64 + NTsync + Wayland + DXVK ==========="
 
-    general_check
 
-    gecho "----------> Installing custom Wine..."
+check_dialog() {
 
-    install_wine
+    if ! command -v dialog >/dev/null; then
 
-    gecho "----------> Creating wrapper and symbolic links..."
+        recho "dialog is not installed. Please install it to use this script."
 
-    create_binary_links
+        exit 1
 
-    gecho "----------> Adding ~/.local/bin to PATH..."
+    fi
 
-    add_local_bin
-
-    gecho "----------> Installing winetricks..."
-
-    install_winetricks
-
-    gecho "----------> Creating wine.desktop launcher..."
-
-    create_wine_launcher
-
-    gecho "----------> Initializing Wine prefix..."
-
-    setup_prefix
-
-    gecho "----------> Setting up DXVK..."
-
-    setup_dxvk
-
-    gecho "----------> Setting up Wayland support..."
-
-    setup_wayland
-
-    gecho "----------> Creating Wine killer shortcut (Ctrl+Alt+Q)..."
-
-    setup_wine_killer_shortcut
-
-    gecho "----------> Installing wineshort2desktop tool..."
-
-    install_wineshort2desktop
-
-    gecho "----------> Adding Experimental Support of 16-bit Windows apps (only for Wine-Tkg, it doesn't seem to work on proton)..."
-
-    download_latest_otvdm
-
-    gecho "=========== INSTALLATION COMPLETED ==========="
-    gecho "Please, logout and login again!"
 }
 
+
+
+
+main_menu() {
+    check_dialog
+    dialog --title "SetWINE" --msgbox "Welcome to SetWINE!\n\nThis script will install and configure Wine/Proton WoW64 x86_64 builds with NTsync, DXVK, and Wayland support on Linux. The idea is to keep the setup simple in your home folder, making it easier to swap to different wine versions. At the end, you'll have full control over your wine or proton setup, while keeping the setup clean and easy to uninstall completely." 20 60
+
+    exec 3>&1
+    option=$(dialog --title "SetWINE" --menu "What would you like to do?" 15 60 3 \
+        1 "Install Wine" \
+        2 "Uninstall Wine" \
+        3 "Exit" 2>&1 1>&3)
+    exec 3>&-
+
+    case "$option" in
+        1)
+            check_wine_installed
+            main_loop
+            ;;
+        2)
+            uninstall_wine
+            dialog --title "Uninstall" --msgbox "SetWINE has been uninstalled." 8 60
+            ;;
+        3)
+            clear
+            exit 0
+            ;;
+        *)
+            clear
+            exit 1
+            ;;
+    esac
+}
+
+main_loop() {
+    general_check
+
+    mapfile -t urls < <(check_wine_ntsync_and_proton_wow64)
+    check_kernel_version
+    local kernel_choice=$?
+
+    if [[ $kernel_choice -eq 0 ]]; then # Yes to only proton
+        urls=($(printf '%s\n' "${urls[@]}" | grep -i "proton"))
+    fi
+
+    urls=($(printf '%s\n' "${urls[@]}" | grep -E '^https?://'))
+
+    if [[ ${#urls[@]} -eq 0 ]]; then
+        dialog --title "Error" --msgbox "No available Wine versions found." 8 60
+        exit 1
+    fi
+
+    local options=()
+    local i=1
+    for url in "${urls[@]}"; do
+        options+=("$i" "$url")
+        ((i++))
+    done
+
+    exec 3>&1
+    wine_option=$(dialog --title "Select Wine version" --menu "Select the Wine version you want to install:" 20 120 15 "${options[@]}" 2>&1 1>&3)
+    exec 3>&-
+
+    if [[ -z "$wine_option" ]]; then
+        recho "No option selected. Aborting."
+        exit 1
+    fi
+
+    local wine_url="${urls[$((wine_option-1))]}"
+
+    exec 3>&1
+    dxvk_option=$(dialog --title "Select DXVK version" --menu "Which DXVK version do you want to install? You can change it later with winetricks" 15 70 4 \
+        1 "dxvk2041 (stable for intel)" \
+        2 "dxvk2051" \
+        3 "dxvk (latest available)" 2>&1 1>&3)
+    exec 3>&-
+
+    case "$dxvk_option" in
+        1) dxvk_ver="dxvk2041" ;; 
+        2) dxvk_ver="dxvk2051" ;; 
+        3) dxvk_ver="dxvk" ;; 
+        *) recho "Invalid option. Aborting DXVK setup." ; exit 1 ;; 
+    esac
+
+    dialog --title "Confirmation" --yesno "The following will be installed:\n\nWine: ${wine_url}\nDXVK: ${dxvk_ver}\n\nDo you want to continue?" 15 70
+    response=$?
+    if [ $response -ne 0 ]; then
+        recho "Installation aborted."
+        exit 1
+    fi
+
+    local log_file="/tmp/setwine_install.log"
+    rm -f "$log_file"
+
+    (
+    steps=10
+    current_step=0
+
+    install_wine "$wine_url" "$log_file"
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    create_binary_links >> "$log_file" 2>&1
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    add_local_bin >> "$log_file" 2>&1
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    install_winetricks >> "$log_file" 2>&1
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    create_wine_launcher >> "$log_file" 2>&1
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    setup_prefix >> "$log_file" 2>&1
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    setup_dxvk "$dxvk_ver" "$log_file"
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    setup_wayland >> "$log_file" 2>&1
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    setup_wine_killer_shortcut >> "$log_file" 2>&1
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    install_wineshort2desktop >> "$log_file" 2>&1
+    current_step=$((current_step + 1))
+    echo $((current_step * 100 / steps))
+
+    download_latest_otvdm >> "$log_file" 2>&1
+    echo 100
+
+    ) | dialog --title "SetWINE Installation" --gauge "Starting installation..." 10 70 0
+
+    dialog --title "Installation Log" --textbox "$log_file" 40 120
+    dialog --title "SetWINE" --msgbox "Installation completed!\n\nPlease, logout and login again!" 10 60
+}
+
+
+
 if [[ "$1" == "uninstall" ]]; then
+
     uninstall_wine
+
     exit 0
+
 else
-    main_loop
+
+    main_menu
+
 fi
