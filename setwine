@@ -148,8 +148,8 @@ install_wine() {
   extracted_folder=$(find "$HOME/.local" -maxdepth 1 -type d \
     -name "wine-*-staging-tkg-amd64-wow64" -o \
     -name "wine-*-staging-tkg-ntsync-amd64-wow64" -o \
-    -name "wine-proton-*-amd64-wow64"
-    ) -print -quit)
+    -name "wine-proton-*-amd64-wow64" \
+    -print -quit)
 
   if [[ -z "$extracted_folder" ]]; then
     echo "Extracted folder not found." >> "$log_file"
