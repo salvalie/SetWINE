@@ -810,14 +810,36 @@ EOF
 
 winetricks_dependencies() {
     step_begin "Installing common game dependencies"
-    local missing=()
-    command -v cabextract >/dev/null 2>&1 || missing+=("cabextract")
-    command -v unzip >/dev/null 2>&1 || missing+=("unzip")
-    if ((${#missing[@]})); then
-        yecho "  WARNING: ${missing[*]} not found - several verbs WILL fail."
-        yecho "  Install them with your package manager (pacman/apt/dnf) and rerun."
+    if ! command -v cabextract >/dev/null 2>&1; then
+        local pm_cmd=""
+        if command -v pacman >/dev/null 2>&1; then
+            pm_cmd="sudo pacman -S --needed cabextract"
+        elif command -v apt >/dev/null 2>&1; then
+            pm_cmd="sudo apt install cabextract"
+        elif command -v dnf >/dev/null 2>&1; then
+            pm_cmd="sudo dnf install -y cabextract"
+        fi
+        echo ""
+        yecho "  SKIPPED: 'cabextract' is required by most winetricks verbs."
+        if [[ -n "$pm_cmd" ]]; then
+            yecho "  Install it first with:"
+            echo ""
+            cecho "      $pm_cmd"
+        else
+            yecho "  Could not detect pacman/apt/dnf - install 'cabextract' manually."
+        fi
+        echo ""
+        yecho "  Once installed, finish the setup by running:"
+        echo ""
+        cecho "      winetricks physx xact xact_x64 d3dx9 vcrun2022 cnc_ddraw otvdm"
+        echo ""
+        step_done
+        return 0
     fi
-    local verbs=(physx xact xact_x64 vkd3d d3dx9 vcrun2022 cnc_ddraw otvdm)
+    if ! command -v unzip >/dev/null 2>&1; then
+        yecho "  WARNING: 'unzip' not found - some verbs may fail."
+    fi
+    local verbs=(physx xact xact_x64 d3dx9 vcrun2022 cnc_ddraw otvdm)
     local v failed=0 idx=0
     local total=${#verbs[@]}
     for v in "${verbs[@]}"; do
