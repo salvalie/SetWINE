@@ -1,422 +1,640 @@
 #!/usr/bin/env bash
-
+#
+# ============================================================================
+#  SetWINE - opinionated HOME located Wine environment for Linux Distros (no root needed)
+# ============================================================================
+#
+#  DESCRIPTION
+#    Downloads a self-contained Wine build (staging-tkg ntsync or Proton,
+#    WoW64) into ~/.local/wine and wires up everything around it, all inside
+#    your home directory:
+#
+#      ~/.local/wine                               the Wine build itself
+#      ~/.local/bin/wine                           wrapper: fsync, mangohud,
+#                                                  native d3d dll overrides,
+#                                                  systemd-inhibit sleep/idle
+#      ~/.local/bin/winecfg,wineserver,wineboot    symlinks to the build
+#      ~/.local/bin/winetricks                     latest upstream, unattended
+#      ~/.local/bin/wined                          run an exe with full log +
+#                                                  filtered error log
+#      ~/.local/bin/winemode                       switch wine graphics driver
+#                                                  between wayland <-> x11
+#      ~/.local/bin/wineshort2desktop              turn any .exe into a desktop
+#                                                  shortcut with extracted icon
+#      ~/.local/share/applications/wine.desktop    .exe/.msi double-click handler
+#      ~/.wine                                     fresh Wine prefix (C: drive)
+#      DXVK + VKD3D                                via winetricks, your choice
+#      Ctrl+Alt+Q                                  "wine killer": wineserver -k
+#
+#    Re-running it replaces Wine but never touches your prefix (~/.wine).
+#    All noisy output (wget, winetricks, cabextract...) goes to a log file in
+#    ~/.cache/setwine/ unless you pass -v.
+#
+#  USAGE
+#    setwine                 interactive installation
+#    setwine -v              same, echoing every underlying command live
+#    setwine --verbose       alias of -v
+#    setwine uninstall       revert everything SetWINE did, except
+#                            ~/.cache/winetricks (kept on purpose)
+#    setwine help            show this help
+#
+#  EXAMPLES
+#    ./setwine                          full guided setup
+#    ./setwine -v                       watch raw wget/winetricks output
+#    ./setwine uninstall                clean slate, winetricks cache kept
+#
 #######################################################################################
 
-# Defining gecho as Green (success) and recho as Red (error) for echo's
-GREEN='\033[0;32m'; RED='\033[0;31m'; RESET='\033[0m'
+GREEN=$'\033[0;32m'; RED=$'\033[0;31m'; YELLOW=$'\033[0;33m'; CYAN=$'\033[0;36m'
+BOLD=$'\033[1m'; DIM=$'\033[2m'; RESET=$'\033[0m'
+
+USE_COLOR=0
+if [[ -t 1 ]]; then USE_COLOR=1; else GREEN='' RED='' YELLOW='' CYAN='' BOLD='' DIM='' RESET=''; fi
 
 gecho(){ printf '%b\n' "${GREEN}$*${RESET}"; }
-recho(){ printf '%b\n' "${RED}$*${RESET}"; }
+recho(){ printf '%b\n' "${RED}$*${RESET}" >&2; }
+yecho(){ printf '%b\n' "${YELLOW}$*${RESET}"; }
+cecho(){ printf '%b\n' "${CYAN}$*${RESET}"; }
+decho(){ printf '%b\n' "${DIM}$*${RESET}"; }
 
-########################################################################################
+VERBOSE=0
+LOGDIR="$HOME/.cache/setwine"
+mkdir -p "$LOGDIR"
+LOGFILE="$LOGDIR/install-$(date +%Y%m%d-%H%M%S).log"
 
-uninstall_wine() {
-    shopt -s nullglob
-    local files=( "$HOME/.local/bin"/wine* )
-    if [ ${#files[@]} -gt 0 ]; then
-        echo "Deleting files:"
-        printf " - %s\n" "${files[@]}"
-        rm -f "${files[@]}"
-    else
-        echo "No wine* files found in ~/.local/bin"
+SPINNER_PID=""
+CURSOR_HIDDEN=0
+CURRENT_STEP=""
+
+cleanup() {
+    kill_spinner_only
+    if (( CURSOR_HIDDEN )); then printf '\e[?25h'; CURSOR_HIDDEN=0; fi
+}
+trap cleanup EXIT INT TERM
+
+kill_spinner_only() {
+    if [[ -n "$SPINNER_PID" ]]; then
+        kill "$SPINNER_PID" 2>/dev/null
+        wait "$SPINNER_PID" 2>/dev/null
+        SPINNER_PID=""
     fi
-    shopt -u nullglob
-
-    for dir in "$HOME/.local/bin/wine" "$HOME/.local/wine" "$HOME/.wine" "$HOME/.cache/winetricks"; do
-        if [ -d "$dir" ]; then
-            echo "Deleting directory: $dir"
-            rm -rf "$dir"
-        else
-            echo "Does not exist, nothing to delete."
-        fi
-    done
 }
 
+clr_line() {
+    if (( USE_COLOR )); then printf '\r\033[K'; else printf '\r'; fi
+}
+
+start_spinner() {
+    local msg="$1"
+    (( USE_COLOR )) || return 0
+    kill_spinner_only
+    SPUN=1
+    printf '\e[?25l'; CURSOR_HIDDEN=1
+    (
+        local frames='|/-\' i=0 start=$SECONDS
+        while :; do
+            printf '\r     %s%s %s (%ds)%s' \
+                "$DIM" "${frames:i++%4:1}" "$msg" "$((SECONDS - start))" "$RESET"
+            sleep 0.12
+        done
+    ) &
+    SPINNER_PID=$!
+}
+
+stop_spinner() {
+    kill_spinner_only
+    clr_line
+}
+
+show_cursor_for_prompt() {
+    kill_spinner_only
+    clr_line
+    if (( CURSOR_HIDDEN )); then printf '\e[?25h'; CURSOR_HIDDEN=0; fi
+    LINE_OPEN=0
+}
+
+STEP_NUM=0
+STEP_TOTAL=12
+LINE_OPEN=0
+SPUN=0
+LABEL_PREFIX=""
+
+step_begin() {
+    show_cursor_for_prompt
+    STEP_NUM=$((STEP_NUM + 1))
+    CURRENT_STEP="$1"
+    LABEL_PREFIX=$(printf '  %s[%2d/%2d]%s %s' "$CYAN" "$STEP_NUM" "$STEP_TOTAL" "$RESET" "$1")
+    printf '%s ' "$LABEL_PREFIX"
+    LINE_OPEN=1
+    SPUN=0
+}
+
+finish_step() {
+    local color="$1" tag="$2"
+    kill_spinner_only
+    if (( SPUN )); then clr_line; fi
+    if (( LINE_OPEN )); then
+        printf ' %s[%s]%s\n' "$color" "$tag" "$RESET"
+    elif (( SPUN )); then
+        printf '%s %s[%s]%s\n' "$LABEL_PREFIX" "$color" "$tag" "$RESET"
+    else
+        printf '        %s[%s]%s\n' "$color" "$tag" "$RESET"
+    fi
+    LINE_OPEN=0
+    SPUN=0
+}
+
+step_done() { finish_step "$GREEN" "ok"; }
+step_fail() { finish_step "$RED" "FAIL"; }
+
+close_label_line() {
+    if (( LINE_OPEN )); then printf '\n'; LINE_OPEN=0; fi
+}
+sub_status(){ close_label_line; printf '         %s- %s%s\n' "$DIM" "$1" "$RESET"; }
+sub_ok(){     close_label_line; printf '         %s+ %s%s\n' "$GREEN" "$1" "$RESET"; }
+sub_fail(){   close_label_line; printf '         %sx %s%s\n' "$RED" "$1" "$RESET"; }
+
+die() {
+    show_cursor_for_prompt
+    recho ""
+    recho "Error: $1"
+    recho "Full details: $LOGFILE"
+    exit 1
+}
+
+confirm() {
+    local question="$1" default="${2:-n}" answer=""
+    show_cursor_for_prompt
+    if [[ "$default" == "y" ]]; then
+        if ! read -rp "$(printf '%b' "  $question ${DIM}[Y/n]${RESET} ")" answer; then
+            printf '\n'
+            return 1
+        fi
+        [[ -z "$answer" || "$answer" =~ ^[Yy] ]]
+    else
+        if ! read -rp "$(printf '%b' "  $question ${DIM}[y/N]${RESET} ")" answer; then
+            printf '\n'
+            return 1
+        fi
+        [[ "$answer" =~ ^[Yy] ]]
+    fi
+}
+
+banner() {
+    echo ""
+    cecho "============================================================"
+    cecho "   SetWINE :: opinionated HOME Wine environment for Linux Distros (no root needed)"
+    cecho "============================================================"
+    decho "   Detailed log: $LOGFILE"
+    echo ""
+}
+
+########################################################################################
+# Checks
+########################################################################################
 
 check_internet() {
-  gecho "Checking internet connection..."
-  if ! ping -q -c 1 -W 1 1.1.1.1 >/dev/null; then
-    recho "No internet connection. Aborting."
-    exit 1
-  fi
+    step_begin "Checking internet connection"
+    if ! ping -q -c 1 -W 1 1.1.1.1 >/dev/null 2>&1; then
+        step_done
+        die "No internet connection."
+    fi
+    step_done
 }
 
 check_architecture() {
+    step_begin "Checking architecture"
     if [[ "$(uname -m)" != "x86_64" && "$(uname -m)" != "amd64" ]]; then
-        recho "You are not on amd64 or x86_64 architecture, stopping."
-        exit 1
-    else
-        gecho "You are on amd64 or x86_64 architecture"
+        step_done
+        die "You are not on amd64/x86_64 architecture."
     fi
+    step_done
 }
 
 check_wine_installed() {
-  gecho "Checking if Wine is already installed..."
+    step_begin "Checking for existing Wine installations"
 
-  if command -v wine >/dev/null 2>&1 && [[ "$(command -v wine)" != "$HOME/.local/bin/wine" ]]; then
-    recho "Wine is already installed globally on the system. Aborting installation."
-    exit 1
-  fi
+    if command -v wine >/dev/null 2>&1 && [[ "$(command -v wine)" != "$HOME/.local/bin/wine" ]]; then
+        step_done
+        die "Wine is already installed globally on this system. Remove it first (or use 'setwine uninstall')."
+    fi
 
-  if [[ -d "$HOME/.local/wine" ]]; then
-    gecho "A previous Wine installation was detected in ~/.local/wine."
-    gecho "For safety we will not remove .wine (your Wine prefix or C: drive)"
-    read -rp "Do you want to remove Wine (not your prefix) and continue with a new installation? [y/N]: " answer
-    case "$answer" in
-      [yY][eE][sS]|[yY])
-        gecho "Removing ~/.local/wine..."
-        rm -rf "$HOME/.local/wine"
-        ;;
-      *)
-        recho "Aborting installation."
-        exit 1
-        ;;
-    esac
-  fi
+    if [[ ! -d "$HOME/.local/wine" ]]; then
+        step_done
+        return 0
+    fi
+
+    step_done
+    yecho "  A previous SetWINE installation exists in ~/.local/wine."
+    yecho "  Your prefix (~/.wine) will NOT be touched."
+    if ! confirm "Remove the old Wine build and continue?" "n"; then
+        die "Aborted by user."
+    fi
+    rm -rf "$HOME/.local/wine"
 }
 
 general_check() {
-  check_internet
-  check_architecture
-  check_wine_installed
+    check_internet
+    check_architecture
+    check_wine_installed
 }
 
-check_wine_ntsync_and_proton_wow64() {
-  local url_api="https://api.github.com/repos/Kron4ek/Wine-Builds/releases"
-  local answer
-  answer=$(wget -qO- "$url_api")
+########################################################################################
+# Wine download / installation
+########################################################################################
 
-  if [[ -z "$answer" ]]; then
-    echo "❌ Could not get answer from GitHub API."
-    return 1
-  fi
+fetch_build_urls() {
+    local answer all
+    answer=$(wget -qO- "https://api.github.com/repos/Kron4ek/Wine-Builds/releases") || true
+    [[ -n "$answer" ]] || return 1
 
-  # Match staging builds (with or without -ntsync-)
-  local ntsync_urls=($(echo "$answer" \
-    | grep -oE '"browser_download_url": ?"[^"]*wine-[0-9]+\.[0-9]+(-[0-9]+)?-staging-tkg(-ntsync)?-amd64-wow64\.tar\.xz"' \
-    | sed -E 's/.*"([^"]+)"/\1/' \
-    | sort -V -r \
-    | head -n 5))
+    all=$(printf '%s\n' "$answer" \
+        | grep -oE '"browser_download_url": ?"[^"]*(staging-tkg(-ntsync)?-amd64-wow64|wine-proton-[0-9]+\.[0-9]+(-[0-9]+)?-amd64-wow64)\.tar\.xz"' \
+        | sed -E 's/.*"([^"]+)"/\1/')
+    [[ -n "$all" ]] || return 1
 
-  # Match proton builds
-  local proton_urls=($(echo "$answer" \
-    | grep -oE '"browser_download_url": ?"[^"]*wine-proton-[0-9]+\.[0-9]+(-[0-9]+)?-amd64-wow64\.tar\.xz"' \
-    | sed -E 's/.*"([^"]+)"/\1/' \
-    | sort -V -r \
-    | head -n 5))
+    printf '%s\n' "$all" | grep -v proton | sort -V -r -u
+    printf '%s\n' "$all" | grep proton | sort -V -r -u
+}
 
-  printf '%s\n' "${ntsync_urls[@]}" "${proton_urls[@]}"
+pretty_name() {
+    basename "$1" | sed -E 's/\.tar\.xz$//'
 }
 
 install_wine() {
-  gecho "Looking for Wine ntsync and Proton WOW64 versions..."
-  mapfile -t urls < <(check_wine_ntsync_and_proton_wow64)
+    step_begin "Looking up available Wine builds (ntsync / Proton)"
+    mapfile -t urls < <(fetch_build_urls)
+    urls=($(printf '%s\n' "${urls[@]}" | grep -E '^https?://' || true))
+    if (( ${#urls[@]} == 0 )); then
+        step_done
+        die "No available Wine versions found (GitHub unreachable?)."
+    fi
+    step_done
 
-  urls=($(printf '%s\n' "${urls[@]}" | grep -E '^https?://'))
+    show_cursor_for_prompt
+    cecho "  Select the Wine version to install:"
+    local i=1 name
+    for url in "${urls[@]}"; do
+        name="$(pretty_name "$url")"
+        if [[ "$name" == *proton* ]]; then
+            printf '    %s%2d)%s %s  %s(proton)%s\n' "$BOLD" "$i" "$RESET" "$name" "$DIM" "$RESET"
+        else
+            printf '    %s%2d)%s %s\n' "$BOLD" "$i" "$RESET" "$name"
+        fi
+        ((i++))
+    done
 
-  if [[ ${#urls[@]} -eq 0 ]]; then
-    recho "No available Wine versions found."
-    exit 1
-  fi
+    local option url
+    while :; do
+        if ! read -rp "  Number [1-${#urls[@]}]: " option; then
+            printf '\n'
+            die "Input stream closed."
+        fi
+        if [[ "$option" =~ ^[1-9][0-9]*$ ]] && (( option >= 1 && option <= ${#urls[@]} )); then
+            break
+        fi
+        yecho "  Invalid option, try again."
+    done
+    url="${urls[$((option-1))]}"
+    decho "  Selected: $url"
 
-  gecho "Select the Wine version you want to install:"
-  local i=1
-  for url in "${urls[@]}"; do
-    echo "  $i) $url"
-    ((i++))
-  done
+    local target="$HOME/.local/wine" archive="$LOGDIR/wine.tar.xz"
+    [[ -d "$target" ]] && rm -rf "$target"
 
-  local option
-  read -rp "Enter the number of the desired version [1-${#urls[@]}]: " option
+    step_begin "Downloading $(pretty_name "$url")"
+    start_spinner "downloading"
+    if (( VERBOSE )); then
+        wget -O "$archive" "$url" 2>&1 | tee -a "$LOGFILE"
+        ok=$(( ${PIPESTATUS[0]} == 0 ))
+    else
+        echo "+ wget -O $archive $url" >> "$LOGFILE"
+        if wget -q -O "$archive" "$url" >>"$LOGFILE" 2>&1; then ok=1; else ok=0; fi
+    fi
+    if [[ "$ok" != 1 ]]; then step_done; die "Download failed."; fi
+    step_done
 
-  if ! [[ "$option" =~ ^[1-9][0-9]*$ ]] || (( option < 1 || option > ${#urls[@]} )); then
-    recho "Invalid option."
-    exit 1
-  fi
+    step_begin "Extracting and placing Wine into ~/.local/wine"
+    start_spinner "extracting"
+    mkdir -p "$HOME/.local"
+    tar -xf "$archive" -C "$HOME/.local/" >>"$LOGFILE" 2>&1 || { step_done; die "Extraction failed."; }
 
-  local url="${urls[$((option-1))]}"
-  local target="$HOME/.local/wine"
-
-  gecho "Installing Wine from:"
-  echo "$url"
-
-  if [[ -d "$target" ]]; then
-    gecho "Folder $target already exists. It will be deleted to replace it."
-    rm -rf "$target"
-  fi
-
-  wget -O "$HOME/wine.tar.xz" "$url" || {
-    recho "Error downloading Wine from $url"
-    exit 1
-  }
-
-  tar -xf "$HOME/wine.tar.xz" -C "$HOME/.local/" || {
-    recho "Error extracting Wine"
-    exit 1
-  }
-
-  # ✅ Support both ntsync and non-ntsync names
-  extracted_folder=$(find "$HOME/.local" -maxdepth 1 -type d \( \
-    -name "wine-*-staging-tkg-amd64-wow64" -o \
-    -name "wine-*-staging-tkg-ntsync-amd64-wow64" -o \
-    -name "wine-proton-*-amd64-wow64" \
-    \) -print -quit)
-
-  if [[ -z "$extracted_folder" ]]; then
-    recho "Extracted folder not found. Available directories:"
-    find "$HOME/.local" -maxdepth 1 -type d -printf "  %f\n"
-    exit 1
-  fi
-
-  mv "$extracted_folder" "$target" || {
-    recho "Error moving the extracted folder."
-    exit 1
-  }
-
-  rm "$HOME/wine.tar.xz"
-
-  gecho "✅ Wine has been set up correctly at: $target"
+    local extracted_folder
+    extracted_folder=$(find "$HOME/.local" -maxdepth 1 -type d \( \
+        -name "wine-*-staging-tkg-amd64-wow64" -o \
+        -name "wine-*-staging-tkg-ntsync-amd64-wow64" -o \
+        -name "wine-proton-*-amd64-wow64" \
+        \) -print -quit)
+    [[ -n "$extracted_folder" ]] || { step_done; die "Extracted folder not recognized."; }
+    mv "$extracted_folder" "$target" >>"$LOGFILE" 2>&1 || { step_done; die "Could not place extracted folder."; }
+    rm -f "$archive"
+    step_done
 }
 
+########################################################################################
+# Wrappers, PATH, winetricks
+########################################################################################
+
 create_binary_links() {
+    step_begin "Creating wine wrapper and symlinks in ~/.local/bin"
     mkdir -p "$HOME/.local/bin"
+
     cat > "$HOME/.local/bin/wine" <<EOF
-#!/bin/bash
+#!/usr/bin/env bash
+
 export WINEFSYNC=1
-export WINENTSYNC=1
 export MANGOHUD=1
+export WINEDLLOVERRIDES="glide=n,b;glide2x=n,b;glide3x=n,b;ddraw=n,b;dinput8=n,b;d3d11=n,b;d3d10=n,b;d3d8=n,b;d3d9=n,b;dxgi=n,b"
 
-# 16-bit check
-TARGET=""
-for arg in "\$@"; do
-    if [[ -f "\$arg" && "\$arg" =~ \.(exe|EXE|com|COM)$ ]]; then
-        TARGET="\$arg"
-        break
-    fi
-done
-
-if [[ -n "\$TARGET" ]]; then
-    FILEINFO=\$(file -b "\$TARGET")
-
-    if echo "\$FILEINFO" | grep -Eqi "MS-DOS executable|NE executable"; then
-        exec "\$HOME/.local/wine/bin/wine" "\$HOME/.local/otvdm/otvdm.exe" "\$TARGET"
-    else
-        exec "\$HOME/.local/wine/bin/wine" "\$@"
-    fi
-else
-    exec "\$HOME/.local/wine/bin/wine" "\$@"
+# Launched with a single .exe (file manager double-click): run from its own folder
+if [[ \$# -eq 1 && "\${1##*.}" == [eE][xX][eE] && -f "\$1" ]]; then
+    cd "\$(dirname "\$1")" || true
 fi
+
+exec systemd-inhibit --what="sleep:idle" \\
+    --why="Running Wine app" \\
+    "$HOME/.local/wine/bin/wine" "\$@"
 EOF
     chmod +x "$HOME/.local/bin/wine"
     ln -sf "$HOME/.local/wine/bin/winecfg" "$HOME/.local/bin/winecfg"
     ln -sf "$HOME/.local/wine/bin/wineserver" "$HOME/.local/bin/wineserver"
     ln -sf "$HOME/.local/wine/bin/wineboot" "$HOME/.local/bin/wineboot"
-    gecho "Symbolic links created in ~/.local/bin and wine wrapper created."
+    step_done
 }
 
-
 add_local_bin() {
-    check_shell() {
-        if [ -n "$FISH_VERSION" ]; then
-            echo "fish"
-        elif [ -n "$ZSH_VERSION" ]; then
-            echo "zsh"
-        elif [ -n "$BASH_VERSION" ]; then
-            echo "bash"
+    step_begin "Adding ~/.local/bin to PATH (.profile, .xprofile)"
+    local local_bin="$HOME/.local/bin"
+    local profile_files=("$HOME/.profile" "$HOME/.xprofile")
+
+    mkdir -p "$local_bin"
+    if [[ ":$PATH:" != *":$local_bin:"* ]]; then
+        export PATH="$local_bin:$PATH"
+    fi
+
+    for profile_file in "${profile_files[@]}"; do
+        [[ -f "$profile_file" ]] || touch "$profile_file"
+        if ! grep -Fq '# Add user local binaries to PATH' "$profile_file"; then
+            {
+                echo ''
+                echo '# Add user local binaries to PATH'
+                echo 'if [ -d "$HOME/.local/bin" ]; then'
+                echo '    export PATH="$HOME/.local/bin:$PATH"'
+                echo 'fi'
+            } >> "$profile_file"
+            sub_ok "configured $profile_file"
         else
-            basename "$(ps -p $$ -o comm=)"
+            sub_status "already configured in $profile_file"
         fi
-    }
-
-    current_shell=$(check_shell)
-    case "$current_shell" in
-        bash)
-            bash_file="$HOME/.bashrc"
-            if ! grep -q "export PATH=\$PATH:\$HOME/.local/bin" "$bash_file"; then
-                echo "export PATH=\$PATH:\$HOME/.local/bin" >> "$bash_file"
-                gecho "~/.local/bin has been added to PATH in $bash_file."
-            else
-                gecho "~/.local/bin is already in PATH in $bash_file."
-            fi
-            export PATH="$PATH:$HOME/.local/bin"
-            ;;
-        zsh)
-            zsh_file="$HOME/.zshrc"
-            if ! grep -q "export PATH=\$PATH:\$HOME/.local/bin" "$zsh_file"; then
-                echo "export PATH=\$PATH:\$HOME/.local/bin" >> "$zsh_file"
-                gecho "~/.local/bin has been added to PATH in $zsh_file."
-            else
-                gecho "~/.local/bin is already in PATH in $zsh_file."
-            fi
-            export PATH="$PATH:$HOME/.local/bin"
-            ;;
-        fish)
-            fish_file="$HOME/.config/fish/config.fish"
-            if ! grep -q "set -gx PATH \$HOME/.local/bin \$PATH" "$fish_file"; then
-                echo "set -gx PATH \$HOME/.local/bin \$PATH" >> "$fish_file"
-                gecho "~/.local/bin has been added to PATH in $fish_file."
-            else
-                gecho "~/.local/bin is already in PATH in $fish_file."
-            fi
-
-            if command -v fish &> /dev/null; then
-                fish -c "set -gx PATH \$HOME/.local/bin \$PATH"
-            fi
-            ;;
-        *)
-            recho "Shell not recognized. Could not add path to PATH. You will need to add it yourself."
-            ;;
-    esac
-    gecho "PATH updated in this session."
+    done
+    step_done
 }
 
 install_winetricks() {
-    wget https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks -O "$HOME/.local/bin/winetricks" || {
-        recho "Error downloading winetricks"
-        return 1
-    }
-
+    step_begin "Installing winetricks (upstream master)"
+    start_spinner "downloading"
+    if (( VERBOSE )); then
+        wget -O "$HOME/.local/bin/winetricks" \
+            https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks 2>&1 \
+            | tee -a "$LOGFILE"
+    else
+        echo "+ wget winetricks" >> "$LOGFILE"
+        wget -q -O "$HOME/.local/bin/winetricks" \
+            https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks >>"$LOGFILE" 2>&1
+    fi
+    if [[ ! -s "$HOME/.local/bin/winetricks" ]]; then
+        step_done
+        die "Could not download winetricks."
+    fi
+    chmod +x "$HOME/.local/bin/winetricks"
     sed -i '/^#!/a export W_OPT_UNATTENDED=1' "$HOME/.local/bin/winetricks"
     sed -i '/^#!/a export WINETRICKS_LATEST_VERSION_CHECK=disabled' "$HOME/.local/bin/winetricks"
-    chmod +x "$HOME/.local/bin/winetricks"
-    gecho "Winetricks installed successfully."
+    step_done
 }
 
+########################################################################################
+# Desktop integration
+########################################################################################
+
+WINE_MIME_TYPES=(
+    application/x-ms-dos-executable
+    application/x-msdownload
+    application/vnd.microsoft.portable-executable
+    application/x-msi
+    application/x-ms-shortcut
+    application/x-bat
+    application/x-mswinurl
+)
+
 create_wine_launcher() {
+    step_begin "Creating wine.desktop and .exe file associations"
     local desktop_file="$HOME/.local/share/applications/wine.desktop"
-
-    if [[ -f "$desktop_file" ]]; then
-        gecho "The wine.desktop file already exists. No changes made."
-        return 0
-    fi
-
     mkdir -p "$(dirname "$desktop_file")"
+
     cat > "$desktop_file" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Wine Windows Program Loader
-Exec=wine start /unix %f
-MimeType=application/x-ms-dos-executable;application/x-msi;application/x-ms-shortcut;application/x-bat;application/x-mswinurl
+Exec=$HOME/.local/bin/wine start /unix %f
+MimeType=$(printf '%s;' "${WINE_MIME_TYPES[@]}")
 Icon=wine
 NoDisplay=false
 StartupNotify=true
+Terminal=false
 EOF
 
-    update-desktop-database "$HOME/.local/share/applications"
+    update-desktop-database "$HOME/.local/share/applications" >>"$LOGFILE" 2>&1
 
-    xdg-mime default wine.desktop application/x-ms-dos-executable
-    xdg-mime default wine.desktop application/x-msi
-    xdg-mime default wine.desktop application/x-ms-shortcut
-    xdg-mime default wine.desktop application/x-bat
-    xdg-mime default wine.desktop application/x-mswinurl
-
-    gecho "wine.desktop created and associated correctly with Windows executable files."
+    for mime in "${WINE_MIME_TYPES[@]}"; do
+        xdg-mime default wine.desktop "$mime" >>"$LOGFILE" 2>&1
+    done
+    step_done
 }
+
+########################################################################################
+# Prefix, DXVK, helpers, hotkey, shortcuts tool
+########################################################################################
 
 setup_prefix() {
-    if ! command -v wine &> /dev/null; then
-        recho "Error: wine is not installed correctly."
-        exit 1
+    step_begin "Initializing Wine prefix (~/.wine)"
+    if [[ ! -x "$HOME/.local/bin/wine" ]]; then
+        step_done
+        die "wine wrapper missing, installation incomplete."
     fi
-
-    WINEDEBUG=-all wineboot --init > /dev/null 2>&1
+    start_spinner "wineboot --init (can take a minute)"
+    echo "+ wineboot --init" >> "$LOGFILE"
+    WINEDEBUG=-all "$HOME/.local/bin/wineboot" --init >>"$LOGFILE" 2>&1
+    "$HOME/.local/bin/wineserver" -w 2>>"$LOGFILE"
+    step_done
 }
-
 
 setup_dxvk() {
-    if ! command -v winetricks &> /dev/null; then
-        recho "Error: winetricks is not available."
-        return 1
+    show_cursor_for_prompt
+    cecho "  Which DXVK version? (changeable later with winetricks)"
+    cecho "    1) dxvk2041 (stable for intel)"
+    cecho "    2) dxvk2051"
+    cecho "    3) dxvk    (latest)"
+    local option dxvk_ver
+    while :; do
+        if ! read -rp "  Number [1-3]: " option; then
+            printf '\n'
+            die "Input stream closed."
+        fi
+        case "$option" in
+            1) dxvk_ver="dxvk2041"; break ;;
+            2) dxvk_ver="dxvk2051"; break ;;
+            3) dxvk_ver="dxvk"; break ;;
+            *) yecho "  Invalid option, try again." ;;
+        esac
+    done
+
+    step_begin "Installing $dxvk_ver + vkd3d via winetricks"
+    start_spinner "winetricks (this can take a while)"
+    echo "+ winetricks --force $dxvk_ver vkd3d" >> "$LOGFILE"
+    if W_OPT_UNATTENDED=1 WINEDEBUG=-all "$HOME/.local/bin/winetricks" --force "$dxvk_ver" vkd3d >>"$LOGFILE" 2>&1; then
+        step_done
+    else
+        step_done
+        yecho "  DXVK/vkd3d reported problems - check the log if games misbehave."
     fi
-
-    gecho "Which DXVK version do you want to install? You can change it later with winetricks"
-    gecho "  1) dxvk2041 (stable for intel)"
-    gecho "  2) dxvk2051"
-    gecho "  3) dxvk (latest available)"
-    read -rp "Choose an option [1-3]: " option
-
-    case "$option" in
-        1) dxvk_ver="dxvk2041" ;;
-        2) dxvk_ver="dxvk2051" ;;
-        3) dxvk_ver="dxvk" ;;
-        *) recho "Invalid option. Aborting DXVK setup." ; return 1 ;;
-    esac
-
-    gecho "Installing $dxvk_ver (DX8/9/10/11) and latest vkd3d(DX12) with winetricks..."
-    gecho "I recommend installing 'cabextract' with pacman or apt for installing anything else with winetricks"
-    WINEDEBUG=-all winetricks --force "$dxvk_ver" vkd3d > /dev/null 2>&1
 }
 
+setup_helpers() {
+    step_begin "Installing helpers: wined (debug), winemode (wayland<->x11)"
+    local bin_dir="$HOME/.local/bin"
+    mkdir -p "$bin_dir"
 
+    cat > "$bin_dir/wined" <<'EOF'
+#!/usr/bin/env sh
 
-setup_wayland() {
-    if ! command -v winetricks &> /dev/null; then
-        recho "Error: winetricks is not installed or cannot be executed."
-        return 1
-    fi
+if [ -z "$1" ]; then
+    echo "Usage: wined <exe>"
+    exit 1
+fi
 
-    if [ "$XDG_SESSION_TYPE" != "wayland" ]; then
-        recho "You are not in a Wayland session. Leaving x11"
-        return 0
-    fi
+logfile="wine_full.log"
+errfile="wine_err.log"
 
-    gecho "We will enable Wayland mode. To switch back to X11 use 'winetricks graphics=x11'."
-    WINEDEBUG=-all winetricks graphics=wayland > /dev/null 2>&1
+WINEDEBUG=+timestamp,+pid,+process wine "$1" >"$logfile" 2>&1
+
+grep -iE "err:|fail|exception" "$logfile" >"$errfile"
+
+echo "Full log: $logfile"
+echo "Filtered errors: $errfile"
+EOF
+
+    cat > "$bin_dir/winemode" <<'EOF'
+#!/usr/bin/env sh
+
+current=$(
+    wine reg.exe query \
+        'HKCU\Software\Wine\Drivers' \
+        /v Graphics 2>/dev/null |
+        awk '/Graphics/ {print $NF}' |
+        tr -d '\r'
+)
+
+case "$current" in
+    wayland)
+        echo "Wine: wayland -> x11"
+        wine reg.exe add \
+            'HKCU\Software\Wine\Drivers' \
+            /v Graphics /d x11 /f
+        ;;
+
+    x11)
+        echo "Wine: x11 -> wayland"
+        wine reg.exe add \
+            'HKCU\Software\Wine\Drivers' \
+            /v Graphics /d wayland /f
+        ;;
+
+    *)
+        echo "Wine Graphics unset -> wayland"
+        wine reg.exe add \
+            'HKCU\Software\Wine\Drivers' \
+            /v Graphics /d wayland /f
+        ;;
+esac
+EOF
+
+    chmod +x "$bin_dir/wined" "$bin_dir/winemode"
+    step_done
 }
-
 
 detect_desktop_environment() {
-    if [[ "$XDG_CURRENT_DESKTOP" =~ GNOME ]]; then
-        echo "gnome"
-    elif [[ "$XDG_CURRENT_DESKTOP" =~ XFCE ]]; then
-        echo "xfce"
-    elif [[ "$XDG_CURRENT_DESKTOP" =~ KDE ]]; then
-        echo "kde"
-    elif [[ "$XDG_CURRENT_DESKTOP" =~ Cinnamon ]]; then
-        echo "cinnamon"
-    else
-        echo "unknown"
+    if [[ "$XDG_CURRENT_DESKTOP" =~ GNOME ]]; then echo "gnome"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ XFCE ]]; then echo "xfce"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ KDE ]]; then echo "kde"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ Cinnamon ]]; then echo "cinnamon"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ LXDE ]]; then echo "openbox"
+    elif pgrep -x openbox >/dev/null 2>&1; then echo "openbox"
+    else echo "unknown"
     fi
 }
 
 setup_wine_killer_shortcut() {
-    local de=$(detect_desktop_environment)
+    step_begin "Creating Wine killer shortcut (Ctrl+Alt+Q -> wineserver -k)"
+    local de
+    de=$(detect_desktop_environment)
 
     case "$de" in
         gnome)
-            gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/']"
-            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ name "Wine Killer"
-            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ command "wineserver -k"
-            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ binding "<Ctrl><Alt>Q"
-            echo "Shortcut created in GNOME. You can now terminate Wine anytime with Ctrl+Alt+Q."
+            gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/']" >>"$LOGFILE" 2>&1
+            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ name "Wine Killer" >>"$LOGFILE" 2>&1
+            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ command "wineserver -k" >>"$LOGFILE" 2>&1
+            gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ binding "<Ctrl><Alt>Q" >>"$LOGFILE" 2>&1
+            step_done
             ;;
-
         xfce)
-            xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/<Primary><Alt>Q" -n -t string -s "wineserver -k"
-            gecho "Shortcut created in XFCE. You can now terminate Wine anytime with Ctrl+Alt+Q."
+            xfconf-query -c xfce4-keyboard-shortcuts \
+                -p "/commands/custom/<Primary><Alt>Q" \
+                -n -t string -s "wineserver -k" >>"$LOGFILE" 2>&1
+            step_done
             ;;
-
-        kde)
-            gecho "Plasma 6 makes it very difficult to create a hotkey via CLI"
-            gecho "You should go to 'shortcuts' and create a hotkey for 'wineserver -k' with any hotkey of your choice to kill Wine if needed"
-            ;;
-
         cinnamon)
-            gsettings set org.cinnamon.desktop.keybindings custom-list "['custom0']"
-            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ name "Wine Killer"
-            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ command "wineserver -k"
-            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ binding "<Ctrl><Alt>Q"
-            gecho "Shortcut created in Cinnamon. You can now terminate Wine anytime with Ctrl+Alt+Q."
+            gsettings set org.cinnamon.desktop.keybindings custom-list "['custom0']" >>"$LOGFILE" 2>&1
+            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ name "Wine Killer" >>"$LOGFILE" 2>&1
+            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ command "wineserver -k" >>"$LOGFILE" 2>&1
+            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ binding "<Ctrl><Alt>Q>" >>"$LOGFILE" 2>&1
+            step_done
             ;;
-
+        openbox)
+            local rc=""
+            if [ -f "$HOME/.config/openbox/rc.xml" ]; then
+                rc="$HOME/.config/openbox/rc.xml"
+            else
+                for candidate in "$HOME/.config/openbox/"*rc.xml; do
+                    if [ -f "$candidate" ]; then rc="$candidate"; break; fi
+                done
+            fi
+            if [ -z "$rc" ]; then
+                step_done
+                yecho "  Openbox config not found, skipping hotkey."
+                return 0
+            fi
+            if grep -q 'wineserver -k' "$rc"; then
+                step_done
+                sub_status "hotkey already present in Openbox config"
+                return 0
+            fi
+            sed -i '/<\/keyboard>/i\
+            <keybind key="C-A-Q">\
+              <action name="Execute">\
+                <command>wineserver -k</command>\
+              </action>\
+            </keybind>' "$rc"
+            openbox --reconfigure >>"$LOGFILE" 2>&1
+            step_done
+            ;;
         *)
-            recho "Desktop environment not supported."
-            return 1
+            step_done
+            sub_status "desktop '$de' not supported yet, skipped"
             ;;
     esac
 }
 
 install_wineshort2desktop() {
+    step_begin "Installing wineshort2desktop tool"
     local target="$HOME/.local/bin/wineshort2desktop"
     mkdir -p "$HOME/.local/bin"
 
@@ -560,102 +778,334 @@ create_wine_shortcut "$@"
 EOF
 
     chmod +x "$target"
-    gecho "Script 'wineshort2desktop' installed in ~/.local/bin/"
-    gecho "now you can link your wine games to the desktop with 'wineshort2desktop' ."
+    step_done
 }
 
-download_latest_otvdm() {
-    local DEST="$HOME/.local/otvdm"
-    local LATEST_URL TAG ZIP_URL TMPDIR UNPACK_DIR TMPZIP entries srcdir
-
-    LATEST_URL=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/otya128/winevdm/releases/latest)
-    TAG="${LATEST_URL##*/}"
-    ZIP_URL="https://github.com/otya128/winevdm/releases/download/${TAG}/otvdm-${TAG}.zip"
-
-    TMPDIR=$(mktemp -d)
-    UNPACK_DIR="$TMPDIR/unpack"
-    mkdir -p "$UNPACK_DIR"
-    TMPZIP="$TMPDIR/otvdm.zip"
-
-    gecho "Downloading $ZIP_URL..."
-    curl -L --fail -o "$TMPZIP" "$ZIP_URL"
-    unzip -q "$TMPZIP" -d "$UNPACK_DIR"
-    rm -rf "${DEST:?}"
-    mkdir -p "$DEST"
-
-    shopt -s dotglob nullglob
-    entries=( "$UNPACK_DIR"/* )
-    if [ "${#entries[@]}" -eq 1 ] && [ -d "${entries[0]}" ]; then
-        srcdir="${entries[0]}"
-        mv "$srcdir"/* "$DEST"/ || true
+winetricks_dependencies() {
+    step_begin "Installing common game dependencies"
+    local verbs=(physx xact xact_x64 vkd3d d3dx9 vcrun2022 cnc_ddraw otvdm)
+    local v failed=0 idx=0
+    local total=${#verbs[@]}
+    for v in "${verbs[@]}"; do
+        ((idx++))
+        sub_status "winetricks $v  ($idx/$total)"
+        echo "+ winetricks $v" >> "$LOGFILE"
+        start_spinner "winetricks $v"
+        if W_OPT_UNATTENDED=1 WINEDEBUG=-all "$HOME/.local/bin/winetricks" "$v" >>"$LOGFILE" 2>&1; then
+            stop_spinner
+        else
+            stop_spinner
+            failed=1
+            sub_fail "winetricks $v (see log)"
+        fi
+    done
+    if (( failed )); then
+        step_done
+        yecho "  Some winetricks verbs failed, see log: $LOGFILE"
     else
-        mv "$UNPACK_DIR"/* "$DEST"/ || true
+        step_done
     fi
-    shopt -u dotglob nullglob
-
-    rm -rf "$TMPDIR"
-
-    gecho "Installed ${TAG} in $DEST"
 }
 
-######################################################################################################
+########################################################################################
+# Main install flow
+########################################################################################
 
 main_loop() {
-    gecho "=========== STARTING INSTALLATION OF WINE WoW64 + NTsync + Wayland + DXVK ==========="
+    STEP_NUM=0
+    STEP_TOTAL=16
+    banner
 
-    general_check
-
-    gecho "----------> Installing custom Wine..."
-
-    install_wine
-
-    gecho "----------> Creating wrapper and symbolic links..."
-
+    general_check                                   # 3 steps
+    install_wine                                    # 3 steps
     create_binary_links
-
-    gecho "----------> Adding ~/.local/bin to PATH..."
-
     add_local_bin
-
-    gecho "----------> Installing winetricks..."
-
     install_winetricks
-
-    gecho "----------> Creating wine.desktop launcher..."
-
     create_wine_launcher
-
-    gecho "----------> Initializing Wine prefix..."
-
     setup_prefix
-
-    gecho "----------> Setting up DXVK..."
-
     setup_dxvk
-
-    gecho "----------> Setting up Wayland support..."
-
-    setup_wayland
-
-    gecho "----------> Creating Wine killer shortcut (Ctrl+Alt+Q)..."
-
+    setup_helpers
     setup_wine_killer_shortcut
-
-    gecho "----------> Installing wineshort2desktop tool..."
-
     install_wineshort2desktop
+    winetricks_dependencies
 
-    gecho "----------> Adding Experimental Support of 16-bit Windows apps (only for Wine-Tkg, it doesn't seem to work on proton)..."
-
-    download_latest_otvdm
-
+    echo ""
     gecho "=========== INSTALLATION COMPLETED ==========="
     gecho "Please, logout and login again!"
+    echo ""
 }
 
-if [[ "$1" == "uninstall" ]]; then
-    uninstall_wine
-    exit 0
-else
-    main_loop
-fi
+########################################################################################
+# Uninstall
+########################################################################################
+
+find_openbox_rc() {
+    if [ -f "$HOME/.config/openbox/rc.xml" ]; then
+        echo "$HOME/.config/openbox/rc.xml"
+        return 0
+    fi
+    local candidate
+    for candidate in "$HOME/.config/openbox/"*rc.xml; do
+        if [ -f "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+collect_game_shortcuts() {
+    local dirs=()
+    local desktop_dir
+    desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+    dirs+=("$desktop_dir" "$HOME/.local/share/applications")
+
+    local f exec_line script
+    for d in "${dirs[@]}"; do
+        [[ -d "$d" ]] || continue
+        for f in "$d"/*.desktop; do
+            [[ -f "$f" ]] || continue
+            if grep -q '\.local/bin/wine' "$f" 2>/dev/null; then
+                echo "$f"
+                continue
+            fi
+            exec_line=$(grep -m1 '^Exec=' "$f" 2>/dev/null | sed -E 's/^Exec="?([^";]*\.sh)"?.*/\1/')
+            if [[ -n "$exec_line" && -f "$exec_line" ]] && grep -q '\.local/bin/wine' "$exec_line" 2>/dev/null; then
+                echo "$f"
+            fi
+        done
+    done | sort -u
+}
+
+strip_path_block() {
+    local f="$1"
+    [[ -f "$f" ]] || return 0
+    grep -q '^# Add user local binaries to PATH$' "$f" || return 0
+    sed -i '\|^# Add user local binaries to PATH$|,/^fi$/d' "$f"
+}
+
+revert_hotkeys() {
+    local de
+    de=$(detect_desktop_environment)
+
+    case "$de" in
+        gnome)
+            if command -v gsettings >/dev/null 2>&1 && \
+               gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null | grep -q 'wine-killer'; then
+                local cur new
+                cur=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings)
+                new=$(printf '%s' "$cur" \
+                    | sed -e "s#['\"]*/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/['\"]*,\s*##" \
+                          -e "s#,\s*['\"]*/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/['\"]*##" \
+                          -e "s#['\"]*/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/['\"]*#@as []#")
+                gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$new" 2>>"$LOGFILE"
+                if command -v dconf >/dev/null 2>&1; then
+                    dconf reset -f /org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/wine-killer/ 2>>"$LOGFILE"
+                fi
+                sub_ok "removed GNOME hotkey"
+            else
+                sub_status "no GNOME hotkey found"
+            fi
+            ;;
+        cinnamon)
+            if command -v gsettings >/dev/null 2>&1 && \
+               gsettings get org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ command 2>/dev/null | grep -q 'wineserver'; then
+                if command -v dconf >/dev/null 2>&1; then
+                    dconf reset -f /org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ 2>>"$LOGFILE"
+                fi
+                local list
+                list=$(gsettings get org.cinnamon.desktop.keybindings custom-list 2>/dev/null)
+                if [[ "$list" == "['custom0']" ]]; then
+                    gsettings set org.cinnamon.desktop.keybindings custom-list "@as []" 2>>"$LOGFILE"
+                fi
+                sub_ok "removed Cinnamon hotkey"
+            else
+                sub_status "no Cinnamon hotkey found"
+            fi
+            ;;
+        xfce)
+            if command -v xfconf-query >/dev/null 2>&1 && \
+               xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/<Primary><Alt>Q" >/dev/null 2>&1; then
+                xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/<Primary><Alt>Q" -r 2>>"$LOGFILE"
+                sub_ok "removed XFCE hotkey"
+            else
+                sub_status "no XFCE hotkey found"
+            fi
+            ;;
+        openbox)
+            local rc
+            if rc=$(find_openbox_rc); then
+                if grep -q 'wineserver -k' "$rc"; then
+                    awk '/<keybind key="C-A-Q">/ {skip=1; next}
+                         skip && /<\/keybind>/ {skip=0; next}
+                         !skip {print}' "$rc" > "$rc.tmp" && mv "$rc.tmp" "$rc"
+                    pgrep -x openbox >/dev/null 2>&1 && openbox --reconfigure >>"$LOGFILE" 2>&1
+                    sub_ok "removed Openbox hotkey ($rc)"
+                else
+                    sub_status "no Openbox hotkey found"
+                fi
+            else
+                sub_status "no Openbox config found"
+            fi
+            ;;
+        *)
+            sub_status "desktop '$de': nothing to revert"
+            ;;
+    esac
+}
+
+main_uninstall() {
+    STEP_NUM=0
+    STEP_TOTAL=8
+    banner
+    cecho "  This will revert everything SetWINE did:"
+    echo ""
+
+    local items=()
+    shopt -s nullglob
+    local binfiles=( "$HOME/.local/bin"/wine* "$HOME/.local/bin/winetricks" "$HOME/.local/bin/winemode" )
+    shopt -u nullglob
+    if ((${#binfiles[@]})); then
+        mapfile -t binfiles < <(printf '%s\n' "${binfiles[@]}" | sort -u)
+        items+=("binaries: ${binfiles[*]#$HOME/}")
+    fi
+    [[ -d "$HOME/.local/wine" ]] && items+=("directory: ~/.local/wine")
+    [[ -f "$HOME/.local/share/applications/wine.desktop" ]] && items+=("desktop entry: ~/.local/share/applications/wine.desktop")
+    [[ -f "$HOME/.config/mimeapps.list" ]] && items+=(".exe/.msi file associations")
+    [[ -f "$HOME/.profile" || -f "$HOME/.xprofile" ]] && items+=("PATH lines in ~/.profile and ~/.xprofile")
+    items+=("keyboard shortcut (Ctrl+Alt+Q) for your desktop")
+    [[ -d "$HOME/.cache/winetricks" ]] && items+=("KEPT as requested: ~/.cache/winetricks")
+
+    local it
+    for it in "${items[@]}"; do
+        [[ "$it" == KEPT* ]] && { yecho "    ~ $it"; continue; }
+        echo "    - $it"
+    done
+    echo ""
+    yecho "    ? Your Wine prefix ~/.wine (installed programs, saved games):"
+    if confirm "remove the prefix too?" "n"; then
+        REMOVE_PREFIX=1
+        echo "    - prefix: ~/.wine (confirmed)"
+    else
+        REMOVE_PREFIX=0
+        yecho "    ~ KEPT: ~/.wine"
+    fi
+    echo ""
+
+    confirm "Proceed with uninstall?" "n" || { yecho "  Aborted."; exit 0; }
+    echo ""
+
+    step_begin "Stopping any running Wine processes"
+    [[ -x "$HOME/.local/bin/wineserver" ]] && "$HOME/.local/bin/wineserver" -k >/dev/null 2>&1
+    sleep 1
+    step_done
+
+    step_begin "Removing binaries from ~/.local/bin"
+    shopt -s nullglob
+    local files=( "$HOME/.local/bin"/wine* "$HOME/.local/bin/winetricks" "$HOME/.local/bin/winemode" )
+    shopt -u nullglob
+    if ((${#files[@]})); then
+        mapfile -t files < <(printf '%s\n' "${files[@]}" | sort -u)
+        rm -f "${files[@]}"
+        sub_ok "removed ${#files[@]} files"
+    else
+        sub_status "nothing to remove"
+    fi
+    step_done
+
+    step_begin "Removing Wine build (~/.local/wine)"
+    if [[ -d "$HOME/.local/wine" ]]; then rm -rf "$HOME/.local/wine"; sub_ok "removed"; else sub_status "not present"; fi
+    step_done
+
+    step_begin "Removing Wine prefix (~/.wine)"
+    if [[ "$REMOVE_PREFIX" == 1 && -d "$HOME/.wine" ]]; then
+        rm -rf "$HOME/.wine"
+        sub_ok "removed"
+    else
+        sub_status "kept"
+    fi
+    step_done
+
+    step_begin "Removing desktop entry and file associations"
+    local desktop_file="$HOME/.local/share/applications/wine.desktop"
+    if [[ -f "$desktop_file" ]]; then
+        rm -f "$desktop_file"
+        update-desktop-database "$HOME/.local/share/applications" >>"$LOGFILE" 2>&1
+        sub_ok "removed wine.desktop"
+    else
+        sub_status "no wine.desktop"
+    fi
+    if [[ -f "$HOME/.config/mimeapps.list" ]]; then
+        sed -i -E '\#^(application/(x-ms-dos-executable|x-msdownload|x-msi|x-ms-shortcut|x-bat|x-mswinurl)|application/vnd\.microsoft\.portable-executable)[[:space:]]*=wine\.desktop#d' \
+            "$HOME/.config/mimeapps.list"
+        sub_ok "cleaned ~/.config/mimeapps.list"
+    fi
+    step_done
+
+    step_begin "Reverting keyboard shortcut"
+    revert_hotkeys
+    step_done
+
+    step_begin "Cleaning PATH lines from shell profiles"
+    strip_path_block "$HOME/.profile"
+    strip_path_block "$HOME/.xprofile"
+    sub_ok "profiles cleaned"
+    step_done
+
+    step_begin "Checking for leftover game shortcuts"
+    local leftovers=()
+    mapfile -t leftovers < <(collect_game_shortcuts)
+    if ((${#leftovers[@]})); then
+        local sc
+        for sc in "${leftovers[@]}"; do echo "         found: $sc"; done
+        if confirm "Remove these shortcuts (their launchers point to removed wine)?" "n"; then
+            rm -f "${leftovers[@]}"
+            sub_ok "removed ${#leftovers[@]} shortcuts"
+        else
+            sub_status "left in place"
+        fi
+    else
+        sub_status "none found"
+    fi
+    step_done
+
+    echo ""
+    gecho "=========== UNINSTALL COMPLETED ==========="
+    decho "winetricks cache kept in ~/.cache/winetricks (delete manually if you want)."
+    decho "Detailed log: $LOGFILE"
+    echo ""
+}
+
+########################################################################################
+# Dispatch
+########################################################################################
+
+usage() {
+    awk 'NR>1 && /^####/ {exit} NR>1 {sub(/^# ?/, ""); print}' "$0"
+}
+
+main() {
+    local args=()
+    local a
+    for a in "$@"; do
+        case "$a" in
+            -v|--verbose) VERBOSE=1 ;;
+            *) args+=("$a") ;;
+        esac
+    done
+
+    local cmd="${args[0]:-install}"
+    case "$cmd" in
+        install)   main_loop ;;
+        uninstall) main_uninstall ;;
+        help|-h|--help) usage ;;
+        *)
+            recho "Unknown command: $cmd"
+            echo ""
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
