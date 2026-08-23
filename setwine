@@ -617,7 +617,7 @@ setup_wine_killer_shortcut() {
             gsettings set org.cinnamon.desktop.keybindings custom-list "['custom0']" >>"$LOGFILE" 2>&1
             gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ name "Wine Killer" >>"$LOGFILE" 2>&1
             gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ command "wineserver -k" >>"$LOGFILE" 2>&1
-            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ binding "<Ctrl><Alt>Q>" >>"$LOGFILE" 2>&1
+            gsettings set org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom0/ binding "['<Ctrl><Alt>q']" >>"$LOGFILE" 2>&1
             step_done
             ;;
         openbox)
