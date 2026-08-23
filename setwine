@@ -118,6 +118,7 @@ STEP_TOTAL=12
 LINE_OPEN=0
 SPUN=0
 LABEL_PREFIX=""
+STEP_CLOSED=0
 
 step_begin() {
     show_cursor_for_prompt
@@ -127,6 +128,7 @@ step_begin() {
     printf '%s ' "$LABEL_PREFIX"
     LINE_OPEN=1
     SPUN=0
+    STEP_CLOSED=0
 }
 
 finish_step() {
@@ -142,6 +144,7 @@ finish_step() {
     fi
     LINE_OPEN=0
     SPUN=0
+    STEP_CLOSED=1
 }
 
 step_done() { finish_step "$GREEN" "ok"; }
@@ -155,7 +158,13 @@ sub_ok(){     close_label_line; printf '         %s+ %s%s\n' "$GREEN" "$1" "$RES
 sub_fail(){   close_label_line; printf '         %sx %s%s\n' "$RED" "$1" "$RESET"; }
 
 die() {
-    show_cursor_for_prompt
+    if (( STEP_CLOSED )); then
+        close_label_line
+        printf '         %sx %s%s\n' "$RED" "$1" "$RESET"
+    else
+        step_fail
+        printf '         %sx %s%s\n' "$RED" "$1" "$RESET"
+    fi
     recho ""
     recho "Error: $1"
     recho "Full details: $LOGFILE"
@@ -195,17 +204,26 @@ banner() {
 
 check_internet() {
     step_begin "Checking internet connection"
-    if ! ping -q -c 1 -W 1 1.1.1.1 >/dev/null 2>&1; then
+    start_spinner "pinging www.google.com"
+    if ping -q -c 2 -W 2 www.google.com >/dev/null 2>&1; then
+        stop_spinner
         step_done
-        die "No internet connection."
+        return 0
     fi
-    step_done
+    # ICMP may be blocked; fall back to a plain HTTP check
+    stop_spinner
+    sub_status "ping failed, trying HTTP check..."
+    if wget -q --spider --timeout=6 --tries=1 https://www.google.com >/dev/null 2>&1 \
+       || { command -v curl >/dev/null 2>&1 && curl -fsS --max-time 6 -o /dev/null https://www.google.com >/dev/null 2>&1; }; then
+        step_done
+        return 0
+    fi
+    die "No internet connection."
 }
 
 check_architecture() {
     step_begin "Checking architecture"
     if [[ "$(uname -m)" != "x86_64" && "$(uname -m)" != "amd64" ]]; then
-        step_done
         die "You are not on amd64/x86_64 architecture."
     fi
     step_done
@@ -215,7 +233,6 @@ check_wine_installed() {
     step_begin "Checking for existing Wine installations"
 
     if command -v wine >/dev/null 2>&1 && [[ "$(command -v wine)" != "$HOME/.local/bin/wine" ]]; then
-        step_done
         die "Wine is already installed globally on this system. Remove it first (or use 'setwine uninstall')."
     fi
 
@@ -237,6 +254,18 @@ general_check() {
     check_internet
     check_architecture
     check_wine_installed
+}
+
+prepare_environment() {
+    local bin="$HOME/.local/bin"
+    mkdir -p "$bin"
+    [[ ":$PATH:" == *":$bin:"* ]] || export PATH="$bin:$PATH"
+
+    # winetricks internally invokes wine/wineserver by name; pin them to our
+    # install so a stale/missing PATH can never stall the verb installs.
+    # (The build is placed at these paths early in main_loop.)
+    export WINE="$HOME/.local/wine/bin/wine"
+    export WINESERVER="$HOME/.local/wine/bin/wineserver"
 }
 
 ########################################################################################
@@ -266,7 +295,6 @@ install_wine() {
     mapfile -t urls < <(fetch_build_urls)
     urls=($(printf '%s\n' "${urls[@]}" | grep -E '^https?://' || true))
     if (( ${#urls[@]} == 0 )); then
-        step_done
         die "No available Wine versions found (GitHub unreachable?)."
     fi
     step_done
@@ -310,13 +338,13 @@ install_wine() {
         echo "+ wget -O $archive $url" >> "$LOGFILE"
         if wget -q -O "$archive" "$url" >>"$LOGFILE" 2>&1; then ok=1; else ok=0; fi
     fi
-    if [[ "$ok" != 1 ]]; then step_done; die "Download failed."; fi
+    if [[ "$ok" != 1 ]]; then die "Download failed."; fi
     step_done
 
     step_begin "Extracting and placing Wine into ~/.local/wine"
     start_spinner "extracting"
     mkdir -p "$HOME/.local"
-    tar -xf "$archive" -C "$HOME/.local/" >>"$LOGFILE" 2>&1 || { step_done; die "Extraction failed."; }
+    tar -xf "$archive" -C "$HOME/.local/" >>"$LOGFILE" 2>&1 || { die "Extraction failed."; }
 
     local extracted_folder
     extracted_folder=$(find "$HOME/.local" -maxdepth 1 -type d \( \
@@ -324,8 +352,8 @@ install_wine() {
         -name "wine-*-staging-tkg-ntsync-amd64-wow64" -o \
         -name "wine-proton-*-amd64-wow64" \
         \) -print -quit)
-    [[ -n "$extracted_folder" ]] || { step_done; die "Extracted folder not recognized."; }
-    mv "$extracted_folder" "$target" >>"$LOGFILE" 2>&1 || { step_done; die "Could not place extracted folder."; }
+    [[ -n "$extracted_folder" ]] || { die "Extracted folder not recognized."; }
+    mv "$extracted_folder" "$target" >>"$LOGFILE" 2>&1 || { die "Could not place extracted folder."; }
     rm -f "$archive"
     step_done
 }
@@ -373,7 +401,10 @@ add_local_bin() {
 
     for profile_file in "${profile_files[@]}"; do
         [[ -f "$profile_file" ]] || touch "$profile_file"
-        if ! grep -Fq '# Add user local binaries to PATH' "$profile_file"; then
+        if grep -qF '# Add user local binaries to PATH' "$profile_file" \
+           || grep -qF 'export PATH="$HOME/.local/bin:$PATH"' "$profile_file"; then
+            sub_status "already configured in $profile_file"
+        else
             {
                 echo ''
                 echo '# Add user local binaries to PATH'
@@ -382,8 +413,6 @@ add_local_bin() {
                 echo 'fi'
             } >> "$profile_file"
             sub_ok "configured $profile_file"
-        else
-            sub_status "already configured in $profile_file"
         fi
     done
     step_done
@@ -402,7 +431,6 @@ install_winetricks() {
             https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks >>"$LOGFILE" 2>&1
     fi
     if [[ ! -s "$HOME/.local/bin/winetricks" ]]; then
-        step_done
         die "Could not download winetricks."
     fi
     chmod +x "$HOME/.local/bin/winetricks"
@@ -457,7 +485,6 @@ EOF
 setup_prefix() {
     step_begin "Initializing Wine prefix (~/.wine)"
     if [[ ! -x "$HOME/.local/bin/wine" ]]; then
-        step_done
         die "wine wrapper missing, installation incomplete."
     fi
     start_spinner "wineboot --init (can take a minute)"
@@ -783,6 +810,13 @@ EOF
 
 winetricks_dependencies() {
     step_begin "Installing common game dependencies"
+    local missing=()
+    command -v cabextract >/dev/null 2>&1 || missing+=("cabextract")
+    command -v unzip >/dev/null 2>&1 || missing+=("unzip")
+    if ((${#missing[@]})); then
+        yecho "  WARNING: ${missing[*]} not found - several verbs WILL fail."
+        yecho "  Install them with your package manager (pacman/apt/dnf) and rerun."
+    fi
     local verbs=(physx xact xact_x64 vkd3d d3dx9 vcrun2022 cnc_ddraw otvdm)
     local v failed=0 idx=0
     local total=${#verbs[@]}
@@ -816,6 +850,7 @@ main_loop() {
     STEP_TOTAL=16
     banner
 
+    prepare_environment
     general_check                                   # 3 steps
     install_wine                                    # 3 steps
     create_binary_links
@@ -880,8 +915,10 @@ collect_game_shortcuts() {
 strip_path_block() {
     local f="$1"
     [[ -f "$f" ]] || return 0
-    grep -q '^# Add user local binaries to PATH$' "$f" || return 0
-    sed -i '\|^# Add user local binaries to PATH$|,/^fi$/d' "$f"
+    grep -q '^# Add user local binaries to PATH$' "$f" && \
+        sed -i '\|^# Add user local binaries to PATH$|,/^fi$/d' "$f"
+    grep -qF 'export PATH="$HOME/.local/bin:$PATH"' "$f" && \
+        sed -i '\|export PATH="\$HOME/\.local/bin:\$PATH"|d' "$f"
 }
 
 revert_hotkeys() {
