@@ -571,10 +571,10 @@ case "$current" in
         ;;
 
     *)
-        echo "Wine Graphics unset -> wayland"
+        echo "Wine Graphics unset -> x11"
         wine reg.exe add \
             'HKCU\Software\Wine\Drivers' \
-            /v Graphics /d wayland /f
+            /v Graphics /d x11 /f
         ;;
 esac
 EOF
