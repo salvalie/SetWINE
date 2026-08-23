@@ -2,6 +2,16 @@
 
 An opinionated, **home-located Wine environment** for Linux distros on **x86_64/amd64**: a fast, fully guided setup that needs **no root**, touches nothing outside your `$HOME`, and is trivial to replace or remove.
 
+## Quick run
+
+Paste this in a terminal to download SetWINE into your home folder, make it executable and start it right away:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/salvalie/SetWINE/main/setwine -o ~/setwine && chmod +x ~/setwine && ~/setwine
+```
+
+The script is saved as `~/setwine`, so you can review it first or re-run it anytime with `./setwine`.
+
 ## Why?
 
 Most Wine setups involve system packages, root privileges, and files scattered across `/usr`. SetWINE does the opposite: it downloads a self-contained Wine build and wires up everything around it inside your home directory, so you get a working gaming-ready Wine stack in minutes — and `setwine uninstall` reverts everything cleanly.
@@ -54,6 +64,16 @@ This project was developed with the assistance of [opencode](https://opencode.ai
 # SetWINE (Español)
 
 Un entorno Wine **ubicado en tu HOME** y con opiniones para distribuciones Linux en **x86_64/amd64**: una instalación rápida y totalmente guiada que **no necesita root**, no toca nada fuera de tu `$HOME`, y es trivial de reemplazar o eliminar.
+
+## Ejecución rápida
+
+Pega esto en una terminal para descargar SetWINE en tu carpeta personal, darle permisos de ejecución y arrancarlo al momento:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/salvalie/SetWINE/main/setwine -o ~/setwine && chmod +x ~/setwine && ~/setwine
+```
+
+El script queda guardado como `~/setwine`, así que puedes revisarlo antes o volver a ejecutarlo cuando quieras con `./setwine`.
 
 ## ¿Por qué?
 
