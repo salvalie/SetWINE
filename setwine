@@ -373,11 +373,6 @@ export WINEFSYNC=1
 export MANGOHUD=1
 export WINEDLLOVERRIDES="glide=n,b;glide2x=n,b;glide3x=n,b;ddraw=n,b;dinput8=n,b;d3d11=n,b;d3d10=n,b;d3d8=n,b;d3d9=n,b;dxgi=n,b"
 
-# Launched with a single .exe (file manager double-click): run from its own folder
-if [[ \$# -eq 1 && "\${1##*.}" == [eE][xX][eE] && -f "\$1" ]]; then
-    cd "\$(dirname "\$1")" || true
-fi
-
 exec systemd-inhibit --what="sleep:idle" \\
     --why="Running Wine app" \\
     "$HOME/.local/wine/bin/wine" "\$@"
