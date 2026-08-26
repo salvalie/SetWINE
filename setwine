@@ -1111,9 +1111,8 @@ install_d7vk() {
     stop_spinner
 
     if [[ -z "$d7vk_url" ]]; then
-        step_done
-        yecho "  Could not fetch latest d7vk release from GitHub."
-        return 1
+        stop_spinner
+        die "Could not fetch latest d7vk release from GitHub."
     fi
 
     # Rename cnc-ddraw's ddraw.dll to ddraw_.dll so d7vk can fall back to it
@@ -1128,9 +1127,7 @@ install_d7vk() {
         stop_spinner
     else
         stop_spinner
-        step_done
-        yecho "  Failed to download d7vk."
-        return 1
+        die "Failed to download d7vk."
     fi
 
     start_spinner "extracting d7vk"
@@ -1147,10 +1144,7 @@ install_d7vk() {
     rm -rf "$tmpdir"
 
     if [[ -z "$d7vk_ddraw" || ! -f "$d7vk_ddraw" ]]; then
-        stop_spinner
-        step_done
-        yecho "  Could not find ddraw.dll in d7vk archive."
-        return 1
+        die "Could not find ddraw.dll in d7vk archive."
     fi
 
     cp "$d7vk_ddraw" "$syswow64/ddraw.dll"
