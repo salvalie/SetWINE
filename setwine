@@ -1093,7 +1093,6 @@ winetricks_dependencies() {
 install_d7vk() {
     step_begin "Installing d7vk (DirectX 2-7 Vulkan wrapper)"
     local syswow64="$HOME/.wine/drive_c/windows/syswow64"
-    local d7vk_url="https://github.com/WinterSnowfall/d7vk/releases/download/v2.1/d7vk-v2.1.zip"
     local archive="$LOGDIR/d7vk.zip"
 
     if [[ ! -d "$syswow64" ]]; then
@@ -1102,13 +1101,28 @@ install_d7vk() {
         return 0
     fi
 
+    # Fetch latest release URL from GitHub API
+    start_spinner "looking up latest d7vk release"
+    local api_response
+    api_response=$(wget -qO- "https://api.github.com/repos/WinterSnowfall/d7vk/releases/latest" 2>/dev/null)
+    local d7vk_tag d7vk_url
+    d7vk_tag=$(printf '%s' "$api_response" | grep -oP '"tag_name":\s*"\K[^"]+' | head -1)
+    d7vk_url=$(printf '%s' "$api_response" | grep -oP '"browser_download_url":\s*"\K[^"]+\.zip' | head -1)
+    stop_spinner
+
+    if [[ -z "$d7vk_url" ]]; then
+        step_done
+        yecho "  Could not fetch latest d7vk release from GitHub."
+        return 1
+    fi
+
     # Rename cnc-ddraw's ddraw.dll to ddraw_.dll so d7vk can fall back to it
     if [[ -f "$syswow64/ddraw.dll" ]] && ! [[ -f "$syswow64/ddraw_.dll" ]]; then
         mv "$syswow64/ddraw.dll" "$syswow64/ddraw_.dll"
         sub_ok "renamed cnc-ddraw ddraw.dll -> ddraw_.dll"
     fi
 
-    start_spinner "downloading d7vk v2.1"
+    start_spinner "downloading d7vk $d7vk_tag"
     echo "+ wget $d7vk_url" >> "$LOGFILE"
     if wget -q -O "$archive" "$d7vk_url" >>"$LOGFILE" 2>&1; then
         stop_spinner
@@ -1125,15 +1139,10 @@ install_d7vk() {
     unzip -q -o "$archive" -d "$tmpdir" >>"$LOGFILE" 2>&1
     rm -f "$archive"
 
-    # Find the x32 ddraw.dll (for WoW64 / 32-bit games)
-    local d7vk_ddraw=""
-    if [[ -f "$tmpdir/x32/ddraw.dll" ]]; then
-        d7vk_ddraw="$tmpdir/x32/ddraw.dll"
-    elif [[ -f "$tmpdir/x64/ddraw.dll" ]]; then
-        d7vk_ddraw="$tmpdir/x64/ddraw.dll"
-    else
-        d7vk_ddraw="$(find "$tmpdir" -name 'ddraw.dll' -type f | head -1)"
-    fi
+    # Find x32 ddraw.dll anywhere in the extracted tree
+    local d7vk_ddraw
+    d7vk_ddraw="$(find "$tmpdir" -path '*/x32/ddraw.dll' -type f | head -1)"
+    [[ -n "$d7vk_ddraw" ]] || d7vk_ddraw="$(find "$tmpdir" -name 'ddraw.dll' -type f | head -1)"
 
     rm -rf "$tmpdir"
 
@@ -1147,7 +1156,7 @@ install_d7vk() {
     cp "$d7vk_ddraw" "$syswow64/ddraw.dll"
     stop_spinner
     step_done
-    sub_ok "d7vk ddraw.dll installed to syswow64"
+    sub_ok "d7vk ddraw.dll ($d7vk_tag) installed to syswow64"
     sub_status "cnc-ddraw available as ddraw_.dll (fallback for ddraw-only games)"
 }
 
