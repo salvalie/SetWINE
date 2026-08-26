@@ -1159,15 +1159,15 @@ install_d7vk() {
         d7vk_ddraw="$(find "$tmpdir" -name 'ddraw.dll' -type f 2>/dev/null | head -1)"
     fi
 
-    rm -rf "$tmpdir"
-
     if [[ -z "$d7vk_ddraw" || ! -f "$d7vk_ddraw" ]]; then
+        rm -rf "$tmpdir"
         step_fail
         yecho "  Could not find ddraw.dll in d7vk archive."
         return 0
     fi
 
     cp "$d7vk_ddraw" "$syswow64/ddraw.dll"
+    rm -rf "$tmpdir"
     stop_spinner
     step_done
     sub_ok "d7vk ddraw.dll ($d7vk_tag) installed to syswow64"
