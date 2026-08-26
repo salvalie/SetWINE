@@ -59,6 +59,21 @@ Re-running the installer replaces the Wine build but **never touches your prefix
 
 This project was developed with the assistance of [opencode](https://opencode.ai) and LLMs. All directives, decisions, and supervision were human.
 
+### Acknowledgments
+
+SetWINE exists because of the incredible work done by these projects and their developers. Linux gaming on Wine wouldn't be what it is today without them:
+
+- **[Wine](https://www.winehq.org/)** — The foundation of everything. Decades of work translating Windows APIs to Linux, making it possible to run Windows games natively.
+- **[Wine-staging-tkg / Proton](https://github.com/Kron4ek/Wine-Builds)** — Kron4ek's builds provide optimized Wine versions with modern patches (ntsync, WoW64) that make gaming just work.
+- **[DXVK](https://github.com/doitsujin/dxvk)** — The DirectX 9/10/11 to Vulkan translation layer that transformed Wine gaming performance. Without it, most modern games would be unplayable.
+- **[D7VK](https://github.com/WinterSnowfall/d7vk)** — DirectX 2-7 to Vulkan translation, bringing old-school 3D games into the Vulkan era with impressive performance even on integrated GPUs.
+- **[cnc-ddraw](https://github.com/narzoul/cnc-ddraw)** — The DirectDraw wrapper that fixes countless classic games that would otherwise refuse to run or render incorrectly.
+- **[VKD3D](https://code.winehq.org/git/vkd3d.git)** — The Direct3D 12 to Vulkan implementation, extending Vulkan coverage to newer APIs.
+- **[Winetricks](https://github.com/Winetricks/winetricks)** — The Swiss Army knife for installing Windows DLLs, runtimes, and libraries into Wine prefixes.
+- **[Numix Project](https://numixproject.github.io/)** — Beautiful icon themes that make Linux desktops shine. Icons used under GPL-3.0+.
+
+A personal thank you to all the developers and contributors of these projects. You've made Linux gaming not just possible, but genuinely enjoyable.
+
 ---
 
 # SetWINE (Español)
@@ -121,3 +136,18 @@ Volver a ejecutar el instalador reemplaza el build de Wine pero **nunca toca tu 
 ## Créditos
 
 Este proyecto fue desarrollado con la asistencia de [opencode](https://opencode.ai) y LLMs. Todas las directivas, decisiones y la supervisión fueron humanas.
+
+### Agradecimientos
+
+SetWINE existe gracias al increíble trabajo de estos proyectos y sus desarrolladores. El gaming en Linux con Wine no sería lo que es hoy sin ellos:
+
+- **[Wine](https://www.winehq.org/)** — La base de todo. Décadas de trabajo traduciendo APIs de Windows a Linux, haciendo posible ejecutar juegos de Windows de forma nativa.
+- **[Wine-staging-tkg / Proton](https://github.com/Kron4ek/Wine-Builds)** — Los builds de Kron4ek proporcionan versiones optimizadas de Wine con parches modernos (ntsync, WoW64) que hacen que el gaming funcione.
+- **[DXVK](https://github.com/doitsujin/dxvk)** — La capa de traducción de DirectX 9/10/11 a Vulkan que transformó el rendimiento del gaming en Wine. Sin él, la mayoría de juegos modernos serían injugables.
+- **[D7VK](https://github.com/WinterSnowfall/d7vk)** — Traducción de DirectX 2-7 a Vulkan, trayendo juegos 3D clásicos a la era de Vulkan con rendimiento impresionante incluso en GPUs integradas.
+- **[cnc-ddraw](https://github.com/narzoul/cnc-ddraw)** — El wrapper de DirectDraw que arregla innumerables juegos clásicos que de otro modo se negarían a ejecutarse o renderizarían incorrectamente.
+- **[VKD3D](https://code.winehq.org/git/vkd3d.git)** — La implementación de Direct3D 12 a Vulkan, extendiendo la cobertura de Vulkan a APIs más modernas.
+- **[Winetricks](https://github.com/Winetricks/winetricks)** — El cuchillo suizo para instalar DLLs de Windows, runtimes y bibliotecas en prefijos de Wine.
+- **[Numix Project](https://numixproject.github.io/)** — Hermosos temas de iconos que hacen brillar el escritorio de Linux. Iconos usados bajo GPL-3.0+.
+
+Un agradecimiento personal a todos los desarrolladores y contribuidores de estos proyectos. Han hecho que el gaming en Linux no solo sea posible, sino genuinamente disfrutable.
