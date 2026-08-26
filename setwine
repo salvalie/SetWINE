@@ -1137,13 +1137,26 @@ install_d7vk() {
     start_spinner "extracting d7vk"
     local tmpdir
     tmpdir="$(mktemp -d)"
-    unzip -q -o "$archive" -d "$tmpdir" >>"$LOGFILE" 2>&1
+    echo "+ unzip $archive -d $tmpdir" >> "$LOGFILE"
+    if ! unzip -q -o "$archive" -d "$tmpdir" >>"$LOGFILE" 2>&1; then
+        rm -f "$archive"
+        rm -rf "$tmpdir"
+        stop_spinner
+        step_fail
+        yecho "  Failed to extract d7vk archive."
+        return 0
+    fi
     rm -f "$archive"
+
+    echo "+ find $tmpdir -name ddraw.dll" >> "$LOGFILE"
+    find "$tmpdir" -name 'ddraw.dll' -type f >> "$LOGFILE" 2>&1
 
     # Find x32 ddraw.dll anywhere in the extracted tree
     local d7vk_ddraw
-    d7vk_ddraw="$(find "$tmpdir" -path '*/x32/ddraw.dll' -type f | head -1)"
-    [[ -n "$d7vk_ddraw" ]] || d7vk_ddraw="$(find "$tmpdir" -name 'ddraw.dll' -type f | head -1)"
+    d7vk_ddraw="$(find "$tmpdir" -path '*/x32/ddraw.dll' -type f 2>/dev/null | head -1)"
+    if [[ -z "$d7vk_ddraw" ]]; then
+        d7vk_ddraw="$(find "$tmpdir" -name 'ddraw.dll' -type f 2>/dev/null | head -1)"
+    fi
 
     rm -rf "$tmpdir"
 
