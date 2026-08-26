@@ -247,16 +247,17 @@ check_wine_installed() {
     cecho "  What would you like to do?"
     echo ""
     echo "    1) Remove old Wine build and install new one (keep ~/.wine prefix)"
-    echo "    2) Uninstall SetWINE completely"
+    echo "    2) Remove old Wine build AND ~/.wine prefix, then install fresh"
     if [[ -d "$HOME/.wine" ]]; then
-        echo "       (this will also ask about your ~/.wine prefix)"
+        yecho "       WARNING: ~/.wine is your C: drive with installed programs and data."
     fi
-    echo "    3) Abort installation"
+    echo "    3) Uninstall SetWINE completely"
+    echo "    4) Abort installation"
     echo ""
 
     local option
     while :; do
-        if ! read -rp "  Number [1-3]: " option; then
+        if ! read -rp "  Number [1-4]: " option; then
             printf '\n'
             die "Input stream closed."
         fi
@@ -267,34 +268,38 @@ check_wine_installed() {
                 return 0
                 ;;
             2)
-                echo ""
                 if [[ -d "$HOME/.wine" ]]; then
-                    yecho "  WARNING: ~/.wine is your Wine prefix (C: drive)."
+                    yecho "  WARNING: This will DELETE ~/.wine (your C: drive)."
+                    yecho "  All installed Windows programs and saved data will be lost."
+                    echo ""
+                    if ! confirm "Are you sure?"; then
+                        yecho "  Aborted."
+                        return 1
+                    fi
+                fi
+                rm -rf "$HOME/.local/wine"
+                rm -rf "$HOME/.wine"
+                return 0
+                ;;
+            3)
+                echo ""
+                REMOVE_PREFIX=0
+                if [[ -d "$HOME/.wine" ]]; then
+                    yecho "  ~/.wine is your Wine prefix (C: drive)."
                     yecho "  This contains installed programs, saved games, and user data."
-                    yecho "  If you remove it, ALL Windows program data will be lost."
                     echo ""
                     if confirm "Remove ~/.wine prefix too?"; then
-                        yecho "  Prefix will be removed."
                         REMOVE_PREFIX=1
-                    else
-                        yecho "  Prefix will be kept."
-                        REMOVE_PREFIX=0
                     fi
-                else
-                    REMOVE_PREFIX=0
                 fi
                 echo ""
-                yecho "  Running full uninstall..."
                 main_uninstall
                 echo ""
                 gecho "=========== UNINSTALL COMPLETED ==========="
                 echo ""
-                yecho "  Continuing with fresh installation..."
-                echo ""
-                rm -rf "$HOME/.local/wine"
-                return 0
+                exit 0
                 ;;
-            3)
+            4)
                 die "Aborted by user."
                 ;;
             *)
