@@ -664,6 +664,10 @@ detect_desktop_environment() {
     elif [[ "$XDG_CURRENT_DESKTOP" =~ Cinnamon ]]; then echo "cinnamon"
     elif [[ "$XDG_CURRENT_DESKTOP" =~ LXDE ]]; then echo "openbox"
     elif pgrep -x openbox >/dev/null 2>&1; then echo "openbox"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ [Hh]yprland ]]; then echo "hyprland"
+    elif pgrep -x Hyprland >/dev/null 2>&1; then echo "hyprland"
+    elif [[ "$XDG_CURRENT_DESKTOP" =~ [Mm]ango ]]; then echo "mangowm"
+    elif pgrep -x mango >/dev/null 2>&1; then echo "mangowm"
     else echo "unknown"
     fi
 }
@@ -720,6 +724,50 @@ setup_wine_killer_shortcut() {
               </action>\
             </keybind>' "$rc"
             openbox --reconfigure >>"$LOGFILE" 2>&1
+            step_done
+            ;;
+        mangowm)
+            local keybinds_file="$HOME/.config/mango/cfg/keybinds.conf"
+            if [[ ! -f "$keybinds_file" ]]; then
+                mkdir -p "$(dirname "$keybinds_file")"
+                touch "$keybinds_file"
+            fi
+            if grep -q 'wineserver -k' "$keybinds_file"; then
+                step_done
+                sub_status "hotkey already present in Mango WM config"
+                return 0
+            fi
+            {
+                echo ""
+                echo "# Wine killer"
+                echo "bind = CTRL+ALT, q, spawn, wineserver -k"
+            } >> "$keybinds_file"
+            step_done
+            ;;
+        hyprland)
+            local hypr_config=""
+            if [[ -f "$HOME/.config/hypr/hyprland.conf" ]]; then
+                hypr_config="$HOME/.config/hypr/hyprland.conf"
+            elif [[ -d "$HOME/.config/hypr" ]]; then
+                for candidate in "$HOME/.config/hypr/"*.conf; do
+                    if [[ -f "$candidate" ]]; then hypr_config="$candidate"; break; fi
+                done
+            fi
+            if [[ -z "$hypr_config" ]]; then
+                mkdir -p "$HOME/.config/hypr"
+                hypr_config="$HOME/.config/hypr/hyprland.conf"
+                touch "$hypr_config"
+            fi
+            if grep -q 'wineserver -k' "$hypr_config"; then
+                step_done
+                sub_status "hotkey already present in Hyprland config"
+                return 0
+            fi
+            {
+                echo ""
+                echo "# Wine killer"
+                echo "bind = CTRL ALT, Q, exec, wineserver -k"
+            } >> "$hypr_config"
             step_done
             ;;
         *)
@@ -1002,6 +1050,31 @@ revert_hotkeys() {
                 fi
             else
                 sub_status "no Openbox config found"
+            fi
+            ;;
+        mangowm)
+            local keybinds_file="$HOME/.config/mango/cfg/keybinds.conf"
+            if [[ -f "$keybinds_file" ]] && grep -q 'wineserver -k' "$keybinds_file"; then
+                sed -i '/# Wine killer/,+2d' "$keybinds_file" 2>>"$LOGFILE"
+                sub_ok "removed Mango WM hotkey"
+            else
+                sub_status "no Mango WM hotkey found"
+            fi
+            ;;
+        hyprland)
+            local hypr_config=""
+            if [[ -f "$HOME/.config/hypr/hyprland.conf" ]]; then
+                hypr_config="$HOME/.config/hypr/hyprland.conf"
+            elif [[ -d "$HOME/.config/hypr" ]]; then
+                for candidate in "$HOME/.config/hypr/"*.conf; do
+                    if [[ -f "$candidate" ]]; then hypr_config="$candidate"; break; fi
+                done
+            fi
+            if [[ -n "$hypr_config" ]] && grep -q 'wineserver -k' "$hypr_config"; then
+                sed -i '/# Wine killer/,+2d' "$hypr_config" 2>>"$LOGFILE"
+                sub_ok "removed Hyprland hotkey"
+            else
+                sub_status "no Hyprland hotkey found"
             fi
             ;;
         *)
