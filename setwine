@@ -19,7 +19,7 @@
 #                                                  filtered error log
 #      ~/.local/bin/winemode                       switch wine graphics driver
 #                                                  between wayland <-> x11
-#      ~/.local/bin/wineshort2desktop              turn any .exe into a desktop
+#      ~/.local/bin/wineshortcut                turn any .exe into a desktop
 #                                                  shortcut with extracted icon
 #      ~/.local/share/applications/wine.desktop    .exe/.msi double-click handler
 #      ~/.wine                                     fresh Wine prefix (C: drive)
@@ -819,9 +819,9 @@ setup_wine_killer_shortcut() {
     esac
 }
 
-install_wineshort2desktop() {
-    step_begin "Installing wineshort2desktop tool"
-    local target="$HOME/.local/bin/wineshort2desktop"
+install_wineshortcut() {
+    step_begin "Installing wineshortcut tool"
+    local target="$HOME/.local/bin/wineshortcut"
     mkdir -p "$HOME/.local/bin"
 
     cat > "$target" <<'EOF'
@@ -829,7 +829,7 @@ install_wineshort2desktop() {
 
 create_wine_shortcut() {
     if [[ $# -lt 2 ]]; then
-        echo "Use: create_wine_shortcut <software.exe> <DIRECT ACCESS NAME>"
+        echo "Use: wineshortcut <software.exe> <DIRECT ACCESS NAME>"
         return 1
     fi
 
@@ -842,7 +842,6 @@ create_wine_shortcut() {
     local base_name="${exe%.exe}"
     local launcher_path="$cwd/$base_name.sh"
     local icon_path="$cwd/icon.png"
-    local shortcut_path="$(xdg-user-dir DESKTOP)/$name.desktop"
     local wine_path="$HOME/.local/bin/wine"
 
     if [[ ! -f "$exe_path" ]]; then
@@ -850,7 +849,7 @@ create_wine_shortcut() {
         return 1
     fi
 
-    # Extrac icons
+    # Extract icons
     local temp_dir
     temp_dir="$(mktemp -d)"
     wrestool -x --type=14 "$exe_path" -o "$temp_dir" 2>/dev/null
@@ -894,9 +893,30 @@ EOF2
 
     chmod +x "$launcher_path"
 
-    # create shortcut
-    cat <<EOF2 > "$shortcut_path"
-[Desktop Entry]
+    # Determine desktop directory
+    local desktop_dir=""
+    local apps_dir="$HOME/.local/share/applications"
+    mkdir -p "$apps_dir"
+
+    # Check common desktop folder names
+    for candidate in "$HOME/Desktop" "$HOME/Escritorio" "$HOME/schreibtisch" "$HOME/Bureau"; do
+        if [[ -d "$candidate" ]]; then
+            desktop_dir="$candidate"
+            break
+        fi
+    done
+
+    # Also check xdg-user-dir as fallback
+    if [[ -z "$desktop_dir" ]]; then
+        local xdg_desktop
+        xdg_desktop="$(xdg-user-dir DESKTOP 2>/dev/null)"
+        if [[ -n "$xdg_desktop" && -d "$xdg_desktop" ]]; then
+            desktop_dir="$xdg_desktop"
+        fi
+    fi
+
+    # Create .desktop content
+    local desktop_content="[Desktop Entry]
 Encoding=UTF-8
 Version=1.0
 Type=Application
@@ -904,14 +924,22 @@ Name=$name
 GenericName=$name
 Comment=$name
 Icon=$icon_path
-Exec="$launcher_path"
+Exec=\"$launcher_path\"
 Categories=Game;
 Path=$cwd
-Terminal=false
-EOF2
+Terminal=false"
 
-    chmod +x "$shortcut_path"
-    echo "Shortcut created: $shortcut_path"
+    # Always create in ~/.local/share/applications (for app menu)
+    echo "$desktop_content" > "$apps_dir/$name.desktop"
+    chmod +x "$apps_dir/$name.desktop"
+    echo "Shortcut created: $apps_dir/$name.desktop"
+
+    # Also create on Desktop if it exists
+    if [[ -n "$desktop_dir" ]]; then
+        echo "$desktop_content" > "$desktop_dir/$name.desktop"
+        chmod +x "$desktop_dir/$name.desktop"
+        echo "Shortcut created: $desktop_dir/$name.desktop"
+    fi
 }
 
 create_wine_shortcut "$@"
@@ -971,7 +999,7 @@ main_loop() {
     setup_dxvk
     setup_helpers
     setup_wine_killer_shortcut
-    install_wineshort2desktop
+    install_wineshortcut
     winetricks_dependencies
 
     echo ""

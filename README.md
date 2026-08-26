@@ -28,7 +28,7 @@ Everything lives under your `$HOME`:
 | `~/.local/bin/winetricks` | Latest upstream, unattended mode |
 | `~/.local/bin/wined` | Run an `.exe` with full log + filtered error log |
 | `~/.local/bin/winemode` | Toggle Wine graphics driver between **Wayland ↔ X11** |
-| `~/.local/bin/wineshort2desktop` | Turn any `.exe` into a desktop shortcut with its icon extracted |
+| `~/.local/bin/wineshortcut` | Turn any `.exe` into a desktop shortcut with its icon extracted |
 | `~/.local/share/applications/wine.desktop` | Double-click handler for `.exe` / `.msi` |
 | `~/.wine` | Fresh Wine prefix (your C: drive) |
 | DXVK + VKD3D | Installed into the prefix via winetricks |
@@ -91,7 +91,7 @@ Todo vive bajo tu `$HOME`:
 | `~/.local/bin/winetricks` | Última versión upstream, modo desatendido |
 | `~/.local/bin/wined` | Ejecuta un `.exe` con log completo + log de errores filtrado |
 | `~/.local/bin/winemode` | Alterna el driver gráfico de Wine entre **Wayland ↔ X11** |
-| `~/.local/bin/wineshort2desktop` | Convierte cualquier `.exe` en un acceso directo de escritorio con su icono extraído |
+| `~/.local/bin/wineshortcut` | Convierte cualquier `.exe` en un acceso directo de escritorio con su icono extraído |
 | `~/.local/share/applications/wine.desktop` | Manejador de doble clic para `.exe` / `.msi` |
 | `~/.wine` | Prefijo Wine nuevo (tu unidad C:) |
 | DXVK + VKD3D | Instalados en el prefijo vía winetricks |
