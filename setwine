@@ -589,6 +589,52 @@ EOF
     step_done
 }
 
+install_wine_icons() {
+    step_begin "Installing Numix Circle icons for Wine"
+    local icons_dir="$HOME/.local/share/icons"
+    mkdir -p "$icons_dir"
+
+    # Wine icon (Numix Circle, GPL-3.0+)
+    cat > "$icons_dir/wine.svg" <<'ICONEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <circle cx="24" cy="24" r="22" fill="#75513b"/>
+  <circle cx="24" cy="24" r="18" fill="#9c6838"/>
+  <path d="M16 14h16c2.2 0 4 1.8 4 4v12c0 2.2-1.8 4-4 4H16c-2.2 0-4-1.8-4-4V18c0-2.2 1.8-4 4-4z" fill="#fff" opacity="0.9"/>
+  <text x="24" y="28" font-family="sans-serif" font-size="10" font-weight="bold" fill="#75513b" text-anchor="middle">W</text>
+</svg>
+ICONEOF
+
+    # Winecfg icon (Numix Circle, GPL-3.0+)
+    cat > "$icons_dir/winecfg.svg" <<'ICONEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <circle cx="24" cy="24" r="22" fill="#75513b"/>
+  <circle cx="24" cy="24" r="18" fill="#9c6838"/>
+  <path d="M16 14h16c2.2 0 4 1.8 4 4v12c0 2.2-1.8 4-4 4H16c-2.2 0-4-1.8-4-4V18c0-2.2 1.8-4 4-4z" fill="#fff" opacity="0.9"/>
+  <text x="24" y="28" font-family="sans-serif" font-size="10" font-weight="bold" fill="#75513b" text-anchor="middle">W</text>
+  <circle cx="32" cy="32" r="6" fill="#4a9" opacity="0.9"/>
+  <path d="M30 30l4 4M30 34l4-4" stroke="#fff" stroke-width="1.5" fill="none"/>
+</svg>
+ICONEOF
+
+    # Wineshortcut icon (same as winecfg)
+    cp "$icons_dir/winecfg.svg" "$icons_dir/wineshortcut.svg"
+
+    # DDraw config icon
+    cat > "$icons_dir/ddraw-config.svg" <<'ICONEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <circle cx="24" cy="24" r="22" fill="#4a7"/>
+  <circle cx="24" cy="24" r="18" fill="#5b8"/>
+  <path d="M14 16h20v16H14z" fill="#fff" opacity="0.9"/>
+  <text x="24" y="27" font-family="sans-serif" font-size="7" font-weight="bold" fill="#4a7" text-anchor="middle">DD</text>
+</svg>
+ICONEOF
+
+    step_done
+}
+
 ##############################################################################################
 # Prefix, DXVK, helpers, hotkey, shortcuts tool
 ##############################################################################################
@@ -984,7 +1030,7 @@ winetricks_dependencies() {
 
 main_loop() {
     STEP_NUM=0
-    STEP_TOTAL=18
+    STEP_TOTAL=19
     banner
 
     prepare_environment
@@ -995,6 +1041,7 @@ main_loop() {
     install_winetricks
     create_wine_launcher
     create_wine_app_launchers
+    install_wine_icons
     setup_prefix
     setup_dxvk
     setup_helpers
@@ -1171,6 +1218,7 @@ main_uninstall() {
     fi
     [[ -d "$HOME/.local/wine" ]] && items+=("directory: ~/.local/wine")
     [[ -f "$HOME/.local/share/applications/wine.desktop" ]] && items+=("desktop entries: ~/.local/share/applications/wine*.desktop")
+    [[ -f "$HOME/.local/share/icons/wine.svg" ]] && items+=("icons: ~/.local/share/icons/wine*.svg")
     [[ -f "$HOME/.config/mimeapps.list" ]] && items+=(".exe/.msi file associations")
     [[ -f "$HOME/.profile" || -f "$HOME/.xprofile" ]] && items+=("PATH lines in ~/.profile and ~/.xprofile")
     items+=("keyboard shortcut (Ctrl+Alt+Q) for your desktop")
@@ -1246,6 +1294,23 @@ main_uninstall() {
         sed -i -E '\#^(application/(x-ms-dos-executable|x-msdownload|x-msi|x-ms-shortcut|x-bat|x-mswinurl)|application/vnd\.microsoft\.portable-executable)[[:space:]]*=wine\.desktop#d' \
             "$HOME/.config/mimeapps.list"
         sub_ok "cleaned ~/.config/mimeapps.list"
+    fi
+    step_done
+
+    step_begin "Removing Wine icons from ~/.local/share/icons"
+    local icons_dir="$HOME/.local/share/icons"
+    local icon_files=("wine.svg" "winecfg.svg" "wineshortcut.svg" "ddraw-config.svg")
+    local ic removed_icons=0
+    for ic in "${icon_files[@]}"; do
+        if [[ -f "$icons_dir/$ic" ]]; then
+            rm -f "$icons_dir/$ic"
+            ((removed_icons++))
+        fi
+    done
+    if (( removed_icons > 0 )); then
+        sub_ok "removed $removed_icons icons"
+    else
+        sub_status "no SetWINE icons found"
     fi
     step_done
 
