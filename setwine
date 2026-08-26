@@ -547,6 +547,48 @@ EOF
     step_done
 }
 
+create_wine_app_launchers() {
+    step_begin "Creating winecfg, ddraw-config, and wineshortcut .desktop files"
+    local apps_dir="$HOME/.local/share/applications"
+    mkdir -p "$apps_dir"
+
+    cat > "$apps_dir/winecfg.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Wine Configuration
+Comment=Configure Wine settings
+Exec=$HOME/.local/bin/winecfg
+Icon=winecfg
+Terminal=false
+Categories=Settings;Utility;
+EOF
+
+    cat > "$apps_dir/ddraw-config.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=DDraw Config (cnc-ddraw)
+Comment=Configure cnc-ddraw wrapper
+Exec=$HOME/.local/bin/wine $HOME/.wine/drive_c/windows/syswow64/cnc-ddraw/config.exe
+Icon=ddraw-config
+Terminal=false
+Categories=Settings;Utility;
+EOF
+
+    cat > "$apps_dir/wineshortcut.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Create Wine Desktop Shortcut
+Comment=Turn any .exe into a desktop shortcut
+Exec=$HOME/.local/bin/wineshortcut
+Icon=wineshortcut
+Terminal=false
+Categories=Utility;
+EOF
+
+    update-desktop-database "$apps_dir" >>"$LOGFILE" 2>&1
+    step_done
+}
+
 ##############################################################################################
 # Prefix, DXVK, helpers, hotkey, shortcuts tool
 ##############################################################################################
@@ -914,7 +956,7 @@ winetricks_dependencies() {
 
 main_loop() {
     STEP_NUM=0
-    STEP_TOTAL=17
+    STEP_TOTAL=18
     banner
 
     prepare_environment
@@ -924,6 +966,7 @@ main_loop() {
     add_local_bin
     install_winetricks
     create_wine_launcher
+    create_wine_app_launchers
     setup_prefix
     setup_dxvk
     setup_helpers
@@ -1099,7 +1142,7 @@ main_uninstall() {
         items+=("binaries: ${binfiles[*]#$HOME/}")
     fi
     [[ -d "$HOME/.local/wine" ]] && items+=("directory: ~/.local/wine")
-    [[ -f "$HOME/.local/share/applications/wine.desktop" ]] && items+=("desktop entry: ~/.local/share/applications/wine.desktop")
+    [[ -f "$HOME/.local/share/applications/wine.desktop" ]] && items+=("desktop entries: ~/.local/share/applications/wine*.desktop")
     [[ -f "$HOME/.config/mimeapps.list" ]] && items+=(".exe/.msi file associations")
     [[ -f "$HOME/.profile" || -f "$HOME/.xprofile" ]] && items+=("PATH lines in ~/.profile and ~/.xprofile")
     items+=("keyboard shortcut (Ctrl+Alt+Q) for your desktop")
@@ -1156,13 +1199,20 @@ main_uninstall() {
     step_done
 
     step_begin "Removing desktop entry and file associations"
-    local desktop_file="$HOME/.local/share/applications/wine.desktop"
-    if [[ -f "$desktop_file" ]]; then
-        rm -f "$desktop_file"
-        update-desktop-database "$HOME/.local/share/applications" >>"$LOGFILE" 2>&1
-        sub_ok "removed wine.desktop"
+    local apps_dir="$HOME/.local/share/applications"
+    local desktop_files=("wine.desktop" "winecfg.desktop" "ddraw-config.desktop" "wineshortcut.desktop")
+    local df removed=0
+    for df in "${desktop_files[@]}"; do
+        if [[ -f "$apps_dir/$df" ]]; then
+            rm -f "$apps_dir/$df"
+            ((removed++))
+        fi
+    done
+    if (( removed > 0 )); then
+        update-desktop-database "$apps_dir" >>"$LOGFILE" 2>&1
+        sub_ok "removed $removed .desktop files"
     else
-        sub_status "no wine.desktop"
+        sub_status "no SetWINE .desktop files found"
     fi
     if [[ -f "$HOME/.config/mimeapps.list" ]]; then
         sed -i -E '\#^(application/(x-ms-dos-executable|x-msdownload|x-msi|x-ms-shortcut|x-bat|x-mswinurl)|application/vnd\.microsoft\.portable-executable)[[:space:]]*=wine\.desktop#d' \
