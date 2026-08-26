@@ -243,11 +243,65 @@ check_wine_installed() {
 
     step_done
     yecho "  A previous SetWINE installation exists in ~/.local/wine."
-    yecho "  Your prefix (~/.wine) will NOT be touched."
-    if ! confirm "Remove the old Wine build and continue?" "n"; then
-        die "Aborted by user."
+    echo ""
+    cecho "  What would you like to do?"
+    echo ""
+    echo "    1) Remove old Wine build and install new one (keep ~/.wine prefix)"
+    echo "    2) Uninstall SetWINE completely"
+    if [[ -d "$HOME/.wine" ]]; then
+        echo "       (this will also ask about your ~/.wine prefix)"
     fi
-    rm -rf "$HOME/.local/wine"
+    echo "    3) Abort installation"
+    echo ""
+
+    local option
+    while :; do
+        if ! read -rp "  Number [1-3]: " option; then
+            printf '\n'
+            die "Input stream closed."
+        fi
+        case "$option" in
+            1)
+                yecho "  Your prefix (~/.wine) will NOT be touched."
+                rm -rf "$HOME/.local/wine"
+                return 0
+                ;;
+            2)
+                echo ""
+                if [[ -d "$HOME/.wine" ]]; then
+                    yecho "  WARNING: ~/.wine is your Wine prefix (C: drive)."
+                    yecho "  This contains installed programs, saved games, and user data."
+                    yecho "  If you remove it, ALL Windows program data will be lost."
+                    echo ""
+                    if confirm "Remove ~/.wine prefix too?"; then
+                        yecho "  Prefix will be removed."
+                        REMOVE_PREFIX=1
+                    else
+                        yecho "  Prefix will be kept."
+                        REMOVE_PREFIX=0
+                    fi
+                else
+                    REMOVE_PREFIX=0
+                fi
+                echo ""
+                yecho "  Running full uninstall..."
+                main_uninstall
+                echo ""
+                gecho "=========== UNINSTALL COMPLETED ==========="
+                echo ""
+                yecho "  Continuing with fresh installation..."
+                echo ""
+                rm -rf "$HOME/.local/wine"
+                return 0
+                ;;
+            3)
+                die "Aborted by user."
+                ;;
+            *)
+                yecho "  Invalid option, try again."
+                ;;
+        esac
+    done
 }
 
 check_dependencies() {
@@ -533,7 +587,7 @@ Type=Application
 Name=Wine Windows Program Loader
 Exec=$HOME/.local/bin/wine start /unix %f
 MimeType=$(printf '%s;' "${WINE_MIME_TYPES[@]}")
-Icon=wine
+Icon=$HOME/.local/share/icons/wine.svg
 NoDisplay=false
 StartupNotify=true
 Terminal=false
@@ -558,7 +612,7 @@ Type=Application
 Name=Wine Configuration
 Comment=Configure Wine settings
 Exec=$HOME/.local/bin/winecfg
-Icon=winecfg
+Icon=$HOME/.local/share/icons/winecfg.svg
 Terminal=false
 Categories=Settings;Utility;
 EOF
@@ -569,7 +623,7 @@ Type=Application
 Name=DDraw Config (cnc-ddraw)
 Comment=Configure cnc-ddraw wrapper
 Exec=$HOME/.local/bin/wine $HOME/.wine/drive_c/windows/syswow64/cnc-ddraw/config.exe
-Icon=ddraw-config
+Icon=$HOME/.local/share/icons/ddraw-config.svg
 Terminal=false
 Categories=Settings;Utility;
 EOF
@@ -580,7 +634,7 @@ Type=Application
 Name=Create Wine Desktop Shortcut
 Comment=Turn any .exe into a desktop shortcut
 Exec=$HOME/.local/bin/wineshortcut
-Icon=wineshortcut
+Icon=$HOME/.local/share/icons/wineshortcut.svg
 Terminal=false
 Categories=Utility;
 EOF
@@ -1230,13 +1284,19 @@ main_uninstall() {
         echo "    - $it"
     done
     echo ""
-    yecho "    ? Your Wine prefix ~/.wine (installed programs, saved games):"
-    if confirm "remove the prefix too?" "n"; then
-        REMOVE_PREFIX=1
-        echo "    - prefix: ~/.wine (confirmed)"
+    if [[ -z "${REMOVE_PREFIX:-}" ]]; then
+        yecho "    ? Your Wine prefix ~/.wine (installed programs, saved games):"
+        if confirm "remove the prefix too?" "n"; then
+            REMOVE_PREFIX=1
+            echo "    - prefix: ~/.wine (confirmed)"
+        else
+            REMOVE_PREFIX=0
+            yecho "    ~ KEPT: ~/.wine"
+        fi
+    elif (( REMOVE_PREFIX )); then
+        echo "    - prefix: ~/.wine (will be removed)"
     else
-        REMOVE_PREFIX=0
-        yecho "    ~ KEPT: ~/.wine"
+        echo "    ~ prefix: ~/.wine (kept)"
     fi
     echo ""
 
