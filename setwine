@@ -250,10 +250,84 @@ check_wine_installed() {
     rm -rf "$HOME/.local/wine"
 }
 
+check_dependencies() {
+    step_begin "Checking system dependencies"
+    local missing=()
+    local missing_names=()
+
+    if ! command -v cabextract >/dev/null 2>&1; then
+        missing+=("cabextract")
+        missing_names+=("cabextract")
+    fi
+    if ! command -v wrestool >/dev/null 2>&1; then
+        missing+=("icoutils")
+        missing_names+=("icoutils (wrestool)")
+    fi
+    if ! command -v convert >/dev/null 2>&1 || ! command -v identify >/dev/null 2>&1; then
+        missing+=("imagemagick")
+        missing_names+=("imagemagick (convert, identify)")
+    fi
+
+    if (( ${#missing[@]} == 0 )); then
+        step_done
+        return 0
+    fi
+
+    printf ' %s\n' "${missing_names[@]}" | while read -r n; do
+        sub_status "missing: $n"
+    done
+
+    local pkg_mgr=""
+    if command -v pacman >/dev/null 2>&1; then
+        pkg_mgr="pacman"
+    elif command -v apt >/dev/null 2>&1; then
+        pkg_mgr="apt"
+    elif command -v dnf >/dev/null 2>&1; then
+        pkg_mgr="dnf"
+    fi
+
+    if [[ -z "$pkg_mgr" ]]; then
+        step_done
+        yecho "  Could not detect pacman/apt/dnf."
+        yecho "  Please install manually: ${missing[*]}"
+        return 1
+    fi
+
+    if ! confirm "Install missing packages with sudo?"; then
+        step_done
+        yecho "  Skipped. Install manually: ${missing[*]}"
+        return 1
+    fi
+
+    local pm_install=""
+    case "$pkg_mgr" in
+        pacman)
+            pm_install="sudo pacman -S --needed ${missing[*]}"
+            ;;
+        apt)
+            pm_install="sudo apt install -y ${missing[*]}"
+            ;;
+        dnf)
+            pm_install="sudo dnf install -y ${missing[*]}"
+            ;;
+    esac
+
+    echo "" >> "$LOGFILE"
+    echo "+ $pm_install" >> "$LOGFILE"
+    if eval "$pm_install" >>"$LOGFILE" 2>&1; then
+        step_done
+    else
+        step_done
+        yecho "  Package installation failed. Check log: $LOGFILE"
+        return 1
+    fi
+}
+
 general_check() {
     check_internet
     check_architecture
     check_wine_installed
+    check_dependencies
 }
 
 prepare_environment() {
@@ -672,52 +746,6 @@ create_wine_shortcut() {
     local exe="$1"
     local name="$2"
 
-    #  Verify necessary deps
-    local missing=()
-    command -v wrestool >/dev/null || missing+=("icoutils (wrestool)")
-    command -v convert  >/dev/null || missing+=("imagemagick (convert)")
-    command -v identify >/dev/null || missing+=("imagemagick (identify)")
-
-    if (( ${#missing[@]} > 0 )); then
-        echo "The following dependencies are missing:"
-        printf '  - %s\n' "${missing[@]}"
-
-        # Detect package manager
-        local pkg_mgr=""
-        if command -v apt >/dev/null; then
-            pkg_mgr="apt"
-        elif command -v dnf >/dev/null; then
-            pkg_mgr="dnf"
-        elif command -v pacman >/dev/null; then
-            pkg_mgr="pacman"
-        fi
-
-        if [[ -n "$pkg_mgr" ]]; then
-            echo "The next packagers are required: imagemagick, icoutils"
-            read -rp "¿Do you want to install them? [y/n]: " resp
-            if [[ "$resp" =~ ^[Yy]$ ]]; then
-                case "$pkg_mgr" in
-                    apt)
-                        sudo apt update && sudo apt install -y imagemagick icoutils
-                        ;;
-                    dnf)
-                        sudo dnf install -y imagemagick icoutils
-                        ;;
-                    pacman)
-                        sudo pacman -Sy --noconfirm imagemagick icoutils
-                        ;;
-                esac
-            else
-                echo "Canceled: Deps werent installed."
-                return 1
-            fi
-        else
-            echo "No compat package manager found (apt, dnf, pacman)."
-            echo "Please install manually the next packages: imagemagick, icoutils"
-            return 1
-        fi
-    fi
-
     local cwd
     cwd="$(pwd)"
     local exe_path="$cwd/$exe"
@@ -805,32 +833,6 @@ EOF
 
 winetricks_dependencies() {
     step_begin "Installing common game dependencies"
-    if ! command -v cabextract >/dev/null 2>&1; then
-        local pm_cmd=""
-        if command -v pacman >/dev/null 2>&1; then
-            pm_cmd="sudo pacman -S --needed cabextract"
-        elif command -v apt >/dev/null 2>&1; then
-            pm_cmd="sudo apt install cabextract"
-        elif command -v dnf >/dev/null 2>&1; then
-            pm_cmd="sudo dnf install -y cabextract"
-        fi
-        echo ""
-        yecho "  SKIPPED: 'cabextract' is required by most winetricks verbs."
-        if [[ -n "$pm_cmd" ]]; then
-            yecho "  Install it first with:"
-            echo ""
-            cecho "      $pm_cmd"
-        else
-            yecho "  Could not detect pacman/apt/dnf - install 'cabextract' manually."
-        fi
-        echo ""
-        yecho "  Once installed, finish the setup by running:"
-        echo ""
-        cecho "      winetricks physx xact xact_x64 d3dx9 vcrun2022 cnc_ddraw otvdm"
-        echo ""
-        step_done
-        return 0
-    fi
     if ! command -v unzip >/dev/null 2>&1; then
         yecho "  WARNING: 'unzip' not found - some verbs may fail."
     fi
@@ -864,11 +866,11 @@ winetricks_dependencies() {
 
 main_loop() {
     STEP_NUM=0
-    STEP_TOTAL=16
+    STEP_TOTAL=17
     banner
 
     prepare_environment
-    general_check                                   # 3 steps
+    general_check                                   # 4 steps
     install_wine                                    # 3 steps
     create_binary_links
     add_local_bin
