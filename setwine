@@ -67,10 +67,17 @@ CURSOR_HIDDEN=0
 CURRENT_STEP=""
 
 cleanup() {
+    local sig="${1:-}"
     kill_spinner_only
     if (( CURSOR_HIDDEN )); then printf '\e[?25h'; CURSOR_HIDDEN=0; fi
+    if [[ "$sig" == "INT" || "$sig" == "TERM" ]]; then
+        echo ""
+        die "Interrupted by user."
+    fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'cleanup INT' INT
+trap 'cleanup TERM' TERM
 
 kill_spinner_only() {
     if [[ -n "$SPINNER_PID" ]]; then
@@ -361,7 +368,7 @@ check_dependencies() {
     local pm_install=""
     case "$pkg_mgr" in
         pacman)
-            pm_install="sudo pacman -S --needed ${missing[*]}"
+            pm_install="sudo pacman -S --needed --noconfirm ${missing[*]}"
             ;;
         apt)
             pm_install="sudo apt install -y ${missing[*]}"
@@ -386,7 +393,7 @@ general_check() {
     check_internet
     check_architecture
     check_wine_installed
-    check_dependencies
+    check_dependencies || die "Required dependencies not satisfied. Install them manually and try again."
 }
 
 prepare_environment() {
