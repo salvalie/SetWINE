@@ -325,6 +325,10 @@ check_dependencies() {
         missing+=("cabextract")
         missing_names+=("cabextract")
     fi
+    if ! command -v unzip >/dev/null 2>&1; then
+        missing+=("unzip")
+        missing_names+=("unzip")
+    fi
     if ! command -v wrestool >/dev/null 2>&1; then
         missing+=("icoutils")
         missing_names+=("icoutils (wrestool)")
@@ -1063,9 +1067,6 @@ EOF
 
 winetricks_dependencies() {
     step_begin "Installing common game dependencies"
-    if ! command -v unzip >/dev/null 2>&1; then
-        yecho "  WARNING: 'unzip' not found - some verbs may fail."
-    fi
     local verbs=(physx xact xact_x64 d3dx9 vcrun2022 cnc_ddraw otvdm)
     local v failed=0 idx=0
     local total=${#verbs[@]}
