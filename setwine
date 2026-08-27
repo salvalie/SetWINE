@@ -198,9 +198,9 @@ confirm() {
 
 banner() {
     echo ""
-    cecho "=================================================================================="
-    cecho "   SetWINE :: opinionated HOME Wine environment for Linux Distros (no root needed)"
-    cecho "=================================================================================="
+    cecho "===================================================================================="
+    cecho "   SetWINE - opinionated HOME located Wine environment for pure x86_64Linux Distros"
+    cecho "===================================================================================="
     decho "   Detailed log: $LOGFILE"
     echo ""
 }
