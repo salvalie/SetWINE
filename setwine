@@ -649,7 +649,8 @@ EOF
 Type=Application
 Name=Create Wine Desktop Shortcut
 Comment=Turn any .exe into a desktop shortcut
-Exec=$HOME/.local/bin/wineshortcut
+Exec=$HOME/.local/bin/wineshortcut %f
+MimeType=$(printf '%s;' "${WINE_MIME_TYPES[@]}")
 Icon=$HOME/.local/share/icons/wineshortcut.svg
 Terminal=false
 Categories=Utility;
@@ -921,26 +922,38 @@ install_wineshortcut() {
 #!/usr/bin/env bash
 
 create_wine_shortcut() {
-    if [[ $# -lt 2 ]]; then
-        echo "Use: wineshortcut <software.exe> <DIRECT ACCESS NAME>"
+    local exe="$1"
+    local name="${2:-}"
+
+    if [[ -z "$exe" ]]; then
+        echo "Use: wineshortcut <software.exe> [NAME]"
         return 1
     fi
 
-    local exe="$1"
-    local name="$2"
+    # If no name given, derive from filename (for .desktop / Dolphin usage)
+    if [[ -z "$name" ]]; then
+        name="$(basename "$exe" .exe)"
+        name="${name%.EXE}"
+    fi
+
+    # Resolve to absolute path
+    if [[ ! -f "$exe" ]]; then
+        # Try relative to cwd
+        exe="$(pwd)/$exe"
+    fi
+    if [[ ! -f "$exe" ]]; then
+        echo "Error: .exe not found: $exe"
+        return 1
+    fi
 
     local cwd
-    cwd="$(pwd)"
-    local exe_path="$cwd/$exe"
-    local base_name="${exe%.exe}"
+    cwd="$(dirname "$exe")"
+    local exe_name="$(basename "$exe")"
+    local base_name="${exe_name%.exe}"
+    base_name="${base_name%.EXE}"
     local launcher_path="$cwd/$base_name.sh"
     local icon_path="$cwd/icon.png"
     local wine_path="$HOME/.local/bin/wine"
-
-    if [[ ! -f "$exe_path" ]]; then
-        echo "Error: .exe not found: $exe_path"
-        return 1
-    fi
 
     # Extract icons
     local temp_dir
