@@ -626,7 +626,7 @@ EOF
 }
 
 create_wine_app_launchers() {
-    step_begin "Creating winecfg, ddraw-config, and wineshortcut .desktop files"
+    step_begin "Creating winecfg, ddraw/nglide-config, and wineshortcut .desktop files"
     local apps_dir="$HOME/.local/share/applications"
     mkdir -p "$apps_dir"
 
@@ -648,6 +648,17 @@ Name=DDraw Config (cnc-ddraw)
 Comment=Configure cnc-ddraw wrapper
 Exec=$HOME/.local/bin/wine "$HOME/.wine/drive_c/windows/syswow64/cnc-ddraw config.exe"
 Icon=$HOME/.local/share/icons/ddraw-config.svg
+Terminal=false
+Categories=Settings;Utility;
+EOF
+
+    cat > "$apps_dir/nglide-config.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=nGlide Config
+Comment=Configure nGlide 3dfx wrapper
+Exec=$HOME/.local/bin/wine "$HOME/.wine/drive_c/windows/syswow64/nglide_config.exe"
+Icon=$HOME/.local/share/icons/nglide-config.svg
 Terminal=false
 Categories=Settings;Utility;
 EOF
@@ -674,7 +685,7 @@ install_wine_icons() {
     mkdir -p "$icons_dir"
 
     local base_url="https://raw.githubusercontent.com/salvalie/SetWINE/main/src/images/icons"
-    local icon_files=("wine.svg" "winecfg.svg" "wineshortcut.svg" "ddraw-config.svg")
+    local icon_files=("wine.svg" "winecfg.svg" "wineshortcut.svg" "ddraw-config.svg" "nglide-config.svg")
     local ic failed=0
     for ic in "${icon_files[@]}"; do
         if ! wget -q -O "$icons_dir/$ic" "$base_url/$ic" >>"$LOGFILE" 2>&1; then
@@ -1181,13 +1192,85 @@ install_d7vk() {
     sub_status "cnc-ddraw available as ddraw_.dll (fallback for ddraw-only games)"
 }
 
+install_nglide() {
+    step_begin "Installing nGlide (3dfx Glide support)"
+    if ! confirm "Install nGlide to add 3dfx Glide support for old games?"; then
+        step_done
+        yecho "  Skipped nGlide."
+        return 0
+    fi
+
+    local syswow64="$HOME/.wine/drive_c/windows/syswow64"
+    local setup="$LOGDIR/nGlide210_setup.exe"
+    local setup_url="https://raw.githubusercontent.com/salvalie/SetWINE/main/thirdparty/nGlide210_setup.exe"
+
+    if [[ ! -d "$syswow64" ]]; then
+        step_done
+        yecho "  syswow64 not found, skipping nGlide."
+        return 0
+    fi
+
+    # Already installed?
+    if [[ -f "$syswow64/glide2x.dll" && -f "$syswow64/nglide_config.exe" ]]; then
+        step_done
+        sub_ok "nGlide already present in prefix, skipping"
+        return 0
+    fi
+
+    start_spinner "downloading nGlide installer"
+    echo "+ wget $setup_url" >> "$LOGFILE"
+    if ! wget -q -O "$setup" "$setup_url" >>"$LOGFILE" 2>&1; then
+        stop_spinner
+        step_fail
+        yecho "  Failed to download nGlide installer."
+        return 0
+    fi
+    stop_spinner
+
+    start_spinner "running nGlide silence installer"
+    echo "+ wine $setup /S" >> "$LOGFILE"
+    local install_cmd
+    install_cmd="wine '$setup' /S"
+    if [[ "$VERBOSE" == 1 ]]; then
+        if ! eval "$install_cmd"; then
+            stop_spinner
+            step_fail
+            yecho "  nGlide installer failed."
+            rm -f "$setup"
+            return 0
+        fi
+    else
+        if ! eval "$install_cmd" >>"$LOGFILE" 2>&1; then
+            stop_spinner
+            step_fail
+            yecho "  nGlide installer failed."
+            rm -f "$setup"
+            return 0
+        fi
+    fi
+    rm -f "$setup"
+    stop_spinner
+
+    # Give the installer a moment to finish writing files
+    sleep 2
+
+    if [[ -f "$syswow64/glide2x.dll" ]]; then
+        step_done
+        sub_ok "nGlide installed (glide.dll, glide2x.dll, glide3x.dll, nglide_config.exe)"
+        sub_status "wine wrapper already forces native 3dfx overrides (glide=n,b;glide2x=n,b;glide3x=n,b)"
+    else
+        step_fail
+        yecho "  nGlide reported success but glide DLLs were not found."
+    fi
+}
+
 ########################################################################################
 # Main install flow
 ########################################################################################
 
 main_loop() {
     STEP_NUM=0
-    STEP_TOTAL=20
+    STEP_TOTAL=21
     banner
 
     prepare_environment
@@ -1206,6 +1289,7 @@ main_loop() {
     install_wineshortcut
     winetricks_dependencies
     install_d7vk
+    install_nglide
 
     echo ""
     gecho "=========== INSTALLATION COMPLETED ==========="
@@ -1440,7 +1524,7 @@ main_uninstall() {
 
     step_begin "Removing desktop entry and file associations"
     local apps_dir="$HOME/.local/share/applications"
-    local desktop_files=("wine.desktop" "winecfg.desktop" "ddraw-config.desktop" "wineshortcut.desktop")
+    local desktop_files=("wine.desktop" "winecfg.desktop" "ddraw-config.desktop" "nglide-config.desktop" "wineshortcut.desktop")
     local df removed=0
     for df in "${desktop_files[@]}"; do
         if [[ -f "$apps_dir/$df" ]]; then
@@ -1463,7 +1547,7 @@ main_uninstall() {
 
     step_begin "Removing Wine icons from ~/.local/share/icons"
     local icons_dir="$HOME/.local/share/icons"
-    local icon_files=("wine.svg" "winecfg.svg" "wineshortcut.svg" "ddraw-config.svg")
+    local icon_files=("wine.svg" "winecfg.svg" "wineshortcut.svg" "ddraw-config.svg" "nglide-config.svg")
     local ic removed_icons=0
     for ic in "${icon_files[@]}"; do
         if [[ -f "$icons_dir/$ic" ]]; then
