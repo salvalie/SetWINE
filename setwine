@@ -337,6 +337,10 @@ check_dependencies() {
         missing+=("imagemagick")
         missing_names+=("imagemagick (convert, identify)")
     fi
+    if ! command -v zenity >/dev/null 2>&1; then
+        missing+=("zenity")
+        missing_names+=("zenity")
+    fi
 
     if (( ${#missing[@]} == 0 )); then
         step_done
