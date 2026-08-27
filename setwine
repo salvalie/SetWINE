@@ -925,6 +925,14 @@ setup_wine_killer_shortcut() {
             } >> "$hypr_config"
             step_done
             ;;
+        kde)
+            step_done
+            yecho "  KDE: hotkey not set automatically. Do it manually:"
+            yecho "    System Settings -> Shortcuts -> Custom Shortcuts"
+            yecho "    -> New -> Global Shortcut -> Command/URL"
+            yecho "    Name: Wine Killer   Command: wineserver -k"
+            yecho "    Trigger: assign the Ctrl+Alt+Q combo"
+            ;;
         *)
             step_done
             sub_status "desktop '$de' not supported yet, skipped"
