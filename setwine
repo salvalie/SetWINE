@@ -638,7 +638,7 @@ EOF
 Type=Application
 Name=DDraw Config (cnc-ddraw)
 Comment=Configure cnc-ddraw wrapper
-Exec=$HOME/.local/bin/wine $HOME/.wine/drive_c/windows/syswow64/cnc-ddraw/config.exe
+Exec=$HOME/.local/bin/wine "$HOME/.wine/drive_c/windows/syswow64/cnc-ddraw config.exe"
 Icon=$HOME/.local/share/icons/ddraw-config.svg
 Terminal=false
 Categories=Settings;Utility;
