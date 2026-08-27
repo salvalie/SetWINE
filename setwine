@@ -1194,11 +1194,6 @@ install_d7vk() {
 
 install_nglide() {
     step_begin "Installing nGlide (3dfx Glide support)"
-    if ! confirm "Install nGlide to add 3dfx Glide support for old games?"; then
-        step_done
-        yecho "  Skipped nGlide."
-        return 0
-    fi
 
     local syswow64="$HOME/.wine/drive_c/windows/syswow64"
     local setup="$LOGDIR/nGlide210_setup.exe"

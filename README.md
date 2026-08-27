@@ -77,6 +77,7 @@ SetWINE exists because of the incredible work done by these projects and their d
 - **[VKD3D](https://code.winehq.org/git/vkd3d.git)** — The Direct3D 12 to Vulkan implementation, extending Vulkan coverage to newer APIs.
 - **[Winetricks](https://github.com/Winetricks/winetricks)** — The Swiss Army knife for installing Windows DLLs, runtimes, and libraries into Wine prefixes.
 - **[otvdm](https://github.com/narzoul/otvdm)** — The 16-bit emulation layer that makes legacy Win16 applications runnable on modern Wine WoW64 setups.
+- **[nGlide](https://www.zeus-software.com/download/nglide)** — A 3dfx Glide wrapper that brings Glide-era games back to life by translating Glide calls to OpenGL/Direct3D. Bundled in `thirdparty/` since it isn't available from winetricks and the official site is often offline.
 - **[Numix Project](https://numixproject.github.io/)** — Beautiful icon themes that make Linux desktops shine. Icons used under GPL-3.0+.
 
 A personal thank you to all the developers and contributors of these projects. You've made Linux gaming not just possible, but genuinely enjoyable.
@@ -162,6 +163,7 @@ SetWINE existe gracias al increíble trabajo de estos proyectos y sus desarrolla
 - **[VKD3D](https://code.winehq.org/git/vkd3d.git)** — La implementación de Direct3D 12 a Vulkan, extendiendo la cobertura de Vulkan a APIs más modernas.
 - **[Winetricks](https://github.com/Winetricks/winetricks)** — El cuchillo suizo para instalar DLLs de Windows, runtimes y bibliotecas en prefijos de Wine.
 - **[otvdm](https://github.com/narzoul/otvdm)** — La capa de emulación de 16-bit que hace posible ejecutar aplicaciones Win16 heredadas en configuraciones modernas de Wine WoW64.
+- **[nGlide](https://www.zeus-software.com/download/nglide)** — Un wrapper de 3dfx Glide que devuelve a la vida los juegos de la era Glide traduciendo las llamadas Glide a OpenGL/Direct3D. Incluido en `thirdparty/` ya que no está disponible desde winetricks y el sitio oficial suele estar offline.
 - **[Numix Project](https://numixproject.github.io/)** — Hermosos temas de iconos que hacen brillar el escritorio de Linux. Iconos usados bajo GPL-3.0+.
 
 Un agradecimiento personal a todos los desarrolladores y contribuidores de estos proyectos. Han hecho que el gaming en Linux no solo sea posible, sino genuinamente disfrutable.
