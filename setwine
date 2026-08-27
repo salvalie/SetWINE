@@ -938,15 +938,24 @@ create_wine_shortcut() {
         return 1
     fi
 
-    # If no name given, derive from filename (for .desktop / Dolphin usage)
+    # If no name given, prompt with zenity
     if [[ -z "$name" ]]; then
-        name="$(basename "$exe" .exe)"
-        name="${name%.EXE}"
+        if command -v zenity >/dev/null 2>&1; then
+            name="$(zenity --entry \
+                --title="Create Wine Desktop Shortcut" \
+                --text="Shortcut name:" \
+                --entry-text="$base_name" \
+                2>/dev/null)"
+            if [[ -z "$name" ]]; then
+                return 0
+            fi
+        else
+            name="$base_name"
+        fi
     fi
 
     # Resolve to absolute path
     if [[ ! -f "$exe" ]]; then
-        # Try relative to cwd
         exe="$(pwd)/$exe"
     fi
     if [[ ! -f "$exe" ]]; then
@@ -966,7 +975,7 @@ create_wine_shortcut() {
     # Extract icons
     local temp_dir
     temp_dir="$(mktemp -d)"
-    wrestool -x --type=14 "$exe_path" -o "$temp_dir" 2>/dev/null
+    wrestool -x --type=14 "$exe" -o "$temp_dir" 2>/dev/null
 
     shopt -s nullglob
     for ico in "$temp_dir"/*.ico; do
