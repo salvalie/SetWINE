@@ -521,9 +521,13 @@ export WINEFSYNC=1
 export MANGOHUD=1
 export WINEDLLOVERRIDES="glide=n,b;glide2x=n,b;glide3x=n,b;ddraw=n,b;dinput8=n,b;d3d11=n,b;d3d10=n,b;d3d8=n,b;d3d9=n,b;dxgi=n,b"
 
-exec systemd-inhibit --what="sleep:idle" \\
-    --why="Running Wine app" \\
-    "$HOME/.local/wine/bin/wine" "\$@"
+if command -v systemd-inhibit &>/dev/null; then
+    exec systemd-inhibit --what="sleep:idle" \\
+        --why="Running Wine app" \\
+        "$HOME/.local/wine/bin/wine" "\$@"
+else
+    exec "$HOME/.local/wine/bin/wine" "\$@"
+fi
 EOF
     chmod +x "$HOME/.local/bin/wine"
     ln -sf "$HOME/.local/wine/bin/winecfg" "$HOME/.local/bin/winecfg"

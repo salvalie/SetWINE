@@ -52,8 +52,14 @@ Re-running the installer replaces the Wine build but **never touches your prefix
 ### Requirements
 
 - Linux on **x86_64 / amd64**
-- Bash, `wget`, `ping`
-- Optional but recommended: `cabextract` (for most winetricks verbs), a Vulkan driver for DXVK
+- Bash 4+, `wget`, `unzip`, `ping`
+- `cabextract` (for most winetricks verbs)
+- `icoutils` (provides `wrestool`, for icon extraction)
+- `imagemagick` (provides `convert`/`identify`, for icon conversion)
+- `zenity` (for `wineshortcut` name dialog)
+- A Vulkan driver (Mesa, NVIDIA proprietary, etc.) for DXVK/D7VK
+- `systemd` (for sleep inhibitor in the wine wrapper)
+- A supported desktop environment for `Ctrl+Alt+Q` hotkeys: GNOME, XFCE, KDE (manual setup), Cinnamon, Hyprland, Openbox, Mango WM, or manually in other environments
 
 ## Credits
 
@@ -70,6 +76,7 @@ SetWINE exists because of the incredible work done by these projects and their d
 - **[cnc-ddraw](https://github.com/narzoul/cnc-ddraw)** — The DirectDraw wrapper that fixes countless classic games that would otherwise refuse to run or render incorrectly.
 - **[VKD3D](https://code.winehq.org/git/vkd3d.git)** — The Direct3D 12 to Vulkan implementation, extending Vulkan coverage to newer APIs.
 - **[Winetricks](https://github.com/Winetricks/winetricks)** — The Swiss Army knife for installing Windows DLLs, runtimes, and libraries into Wine prefixes.
+- **[otvdm](https://github.com/narzoul/otvdm)** — The 16-bit emulation layer that makes legacy Win16 applications runnable on modern Wine WoW64 setups.
 - **[Numix Project](https://numixproject.github.io/)** — Beautiful icon themes that make Linux desktops shine. Icons used under GPL-3.0+.
 
 A personal thank you to all the developers and contributors of these projects. You've made Linux gaming not just possible, but genuinely enjoyable.
@@ -130,8 +137,14 @@ Volver a ejecutar el instalador reemplaza el build de Wine pero **nunca toca tu 
 ### Requisitos
 
 - Linux en **x86_64 / amd64**
-- Bash, `wget`, `ping`
-- Opcional pero recomendable: `cabextract` (para la mayoría de verbos de winetricks), un driver Vulkan para DXVK
+- Bash 4+, `wget`, `unzip`, `ping`
+- `cabextract` (para la mayoría de verbos de winetricks)
+- `icoutils` (provee `wrestool`, para extraer iconos)
+- `imagemagick` (provee `convert`/`identify`, para convertir iconos)
+- `zenity` (para el diálogo de nombre de `wineshortcut`)
+- Un driver Vulkan (Mesa, NVIDIA propietario, etc.) para DXVK/D7VK
+- `systemd` (para el inhibidor de suspensión en el wrapper de wine)
+- Un entorno de escritorio soportado para los atajos `Ctrl+Alt+Q`: GNOME, XFCE, KDE (configuración manual), Cinnamon, Hyprland, Openbox, Mango WM, o configuración manual en otros entornos
 
 ## Créditos
 
@@ -148,6 +161,7 @@ SetWINE existe gracias al increíble trabajo de estos proyectos y sus desarrolla
 - **[cnc-ddraw](https://github.com/narzoul/cnc-ddraw)** — El wrapper de DirectDraw que arregla innumerables juegos clásicos que de otro modo se negarían a ejecutarse o renderizarían incorrectamente.
 - **[VKD3D](https://code.winehq.org/git/vkd3d.git)** — La implementación de Direct3D 12 a Vulkan, extendiendo la cobertura de Vulkan a APIs más modernas.
 - **[Winetricks](https://github.com/Winetricks/winetricks)** — El cuchillo suizo para instalar DLLs de Windows, runtimes y bibliotecas en prefijos de Wine.
+- **[otvdm](https://github.com/narzoul/otvdm)** — La capa de emulación de 16-bit que hace posible ejecutar aplicaciones Win16 heredadas en configuraciones modernas de Wine WoW64.
 - **[Numix Project](https://numixproject.github.io/)** — Hermosos temas de iconos que hacen brillar el escritorio de Linux. Iconos usados bajo GPL-3.0+.
 
 Un agradecimiento personal a todos los desarrolladores y contribuidores de estos proyectos. Han hecho que el gaming en Linux no solo sea posible, sino genuinamente disfrutable.
