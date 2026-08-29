@@ -537,7 +537,7 @@ EOF
 }
 
 add_local_bin() {
-    step_begin "Adding ~/.local/bin to PATH (.profile, .xprofile)"
+    step_begin "Adding ~/.local/bin to PATH (.profile, .xprofile, .bash_profile, .zsh_profile)"
     local local_bin="$HOME/.local/bin"
     local profile_files=("$HOME/.profile" "$HOME/.xprofile")
 
@@ -560,6 +560,24 @@ add_local_bin() {
                 echo 'fi'
             } >> "$profile_file"
             sub_ok "configured $profile_file"
+        fi
+    done
+
+    # Some setups use .bash_profile / .zsh_profile instead of .profile/.xprofile.
+    # Make those shells source the home profiles so the PATH still applies.
+    local shell_profiles=("$HOME/.bash_profile" "$HOME/.zsh_profile")
+    for sp in "${shell_profiles[@]}"; do
+        [[ -f "$sp" ]] || touch "$sp"
+        if grep -qF '# Source home profiles for user-local binaries' "$sp"; then
+            sub_status "already configured in $sp"
+        else
+            {
+                echo ''
+                echo '# Source home profiles for user-local binaries'
+                echo '[ -f "$HOME/.profile" ] && . "$HOME/.profile"'
+                echo '[ -f "$HOME/.xprofile" ] && . "$HOME/.xprofile"'
+            } >> "$sp"
+            sub_ok "configured $sp"
         fi
     done
     step_done
@@ -1349,6 +1367,8 @@ strip_path_block() {
         sed -i '\|^# Add user local binaries to PATH$|,/^fi$/d' "$f"
     grep -qF 'export PATH="$HOME/.local/bin:$PATH"' "$f" && \
         sed -i '\|export PATH="\$HOME/\.local/bin:\$PATH"|d' "$f"
+    grep -q '^# Source home profiles for user-local binaries$' "$f" && \
+        sed -i '\|^# Source home profiles for user-local binaries$|,+2d' "$f"
 }
 
 revert_hotkeys() {
@@ -1465,7 +1485,7 @@ main_uninstall() {
     [[ -f "$HOME/.local/share/applications/wine.desktop" ]] && items+=("desktop entries: ~/.local/share/applications/wine*.desktop")
     [[ -f "$HOME/.local/share/icons/wine.svg" ]] && items+=("icons: ~/.local/share/icons/wine*.svg")
     [[ -f "$HOME/.config/mimeapps.list" ]] && items+=(".exe/.msi file associations")
-    [[ -f "$HOME/.profile" || -f "$HOME/.xprofile" ]] && items+=("PATH lines in ~/.profile and ~/.xprofile")
+    [[ -f "$HOME/.profile" || -f "$HOME/.xprofile" || -f "$HOME/.bash_profile" || -f "$HOME/.zsh_profile" ]] && items+=("PATH lines in ~/.profile, ~/.xprofile, ~/.bash_profile, ~/.zsh_profile")
     items+=("keyboard shortcut (Ctrl+Alt+Q) for your desktop")
     [[ -d "$HOME/.cache/winetricks" ]] && items+=("KEPT as requested: ~/.cache/winetricks")
 
@@ -1572,6 +1592,8 @@ main_uninstall() {
     step_begin "Cleaning PATH lines from shell profiles"
     strip_path_block "$HOME/.profile"
     strip_path_block "$HOME/.xprofile"
+    strip_path_block "$HOME/.bash_profile"
+    strip_path_block "$HOME/.zsh_profile"
     sub_ok "profiles cleaned"
     step_done
 
