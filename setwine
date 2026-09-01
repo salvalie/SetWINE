@@ -1111,13 +1111,14 @@ EOF
 
 winetricks_dependencies() {
     step_begin "Installing common game dependencies"
-    local verbs=(physx xact xact_x64 d3dx9 vcrun2022 cnc_ddraw otvdm)
+    local verbs=(physx openal xact xact_x64 d3dx9 vcrun6 vcrun2005 vcrun2008 vcrun2010 vcrun2012 vcrun2013 vcrun2022 cnc_ddraw otvdm)
     local v failed=0 idx=0
     local total=${#verbs[@]}
     for v in "${verbs[@]}"; do
         ((idx++))
         sub_status "winetricks $v  ($idx/$total)"
-        echo "+ winetricks $v" >> "$LOGFILE"
+        echo "+ winetricks $WINEDLLOVERRIDES="mscoree,mshtml=d" wineboot
+v" >> "$LOGFILE"
         start_spinner "winetricks $v"
         if W_OPT_UNATTENDED=1 WINEDEBUG=-all "$HOME/.local/bin/winetricks" "$v" >>"$LOGFILE" 2>&1; then
             stop_spinner
